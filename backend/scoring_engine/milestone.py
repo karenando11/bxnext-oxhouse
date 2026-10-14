@@ -206,9 +206,17 @@ def _boost_for_gap(gap: float, config: MilestoneConfig) -> float:
 
 
 def milestone(
-    data: MilestoneInput, now: datetime, config: MilestoneConfig = DEFAULT_CONFIG
+    data: MilestoneInput,
+    now: datetime,
+    config: MilestoneConfig = DEFAULT_CONFIG,
+    *,
+    earnings_past_is_imminent: bool = True,
 ) -> MilestoneResult:
-    """Milestone for one company at ``now`` (timezone-aware), unrounded, with every component."""
+    """Milestone for one company at ``now`` (timezone-aware), unrounded, with every component.
+
+    ``earnings_past_is_imminent`` is the parity quirk: a past earnings date counts as 0 days out
+    and scores the maximum. With it off, past earnings dates are skipped.
+    """
     if now.tzinfo is None:
         raise ValueError("now must be timezone-aware")
 
@@ -266,8 +274,9 @@ def milestone(
         terms.append(
             MilestoneTerm("recruiting_bonus", config.recruiting_score, config.recruiting_weight)
         )
-    if data.earnings_date is not None:
-        days = max(0.0, _days_until(data.earnings_date, now))
+    earnings_days = _days_until(data.earnings_date, now) if data.earnings_date is not None else None
+    if earnings_days is not None and (earnings_past_is_imminent or earnings_days >= 0):
+        days = max(0.0, earnings_days)
         weight = (
             config.earnings_weight_with_clinical
             if clinical_scored

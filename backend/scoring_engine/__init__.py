@@ -18,6 +18,16 @@ from scoring_engine.cash_health import (
     runway_cap,
 )
 from scoring_engine.composite import CompositeConfig, CompositeResult, composite
+from scoring_engine.effective_runway import RunwayAdjustConfig, effective_runway_months
+from scoring_engine.formula import (
+    PARITY,
+    ConfigError,
+    FormulaConfig,
+    FormulaImmutableError,
+    FormulaRegistry,
+    FormulaVersion,
+    Quirks,
+)
 from scoring_engine.milestone import (
     MilestoneConfig,
     MilestoneInput,
@@ -28,6 +38,7 @@ from scoring_engine.milestone import (
     time_decay,
 )
 from scoring_engine.rounding import DISPLAY_DECIMALS, display_score, round_half_up
+from scoring_engine.score import CompanyInputs, CompanyScores, score_universe
 from scoring_engine.topology import (
     DEFAULT_CONFIG,
     DIMENSIONS,
@@ -50,6 +61,18 @@ from scoring_engine.topology import (
 )
 
 __all__ = [
+    "PARITY",
+    "ConfigError",
+    "FormulaConfig",
+    "FormulaImmutableError",
+    "FormulaRegistry",
+    "FormulaVersion",
+    "Quirks",
+    "RunwayAdjustConfig",
+    "effective_runway_months",
+    "CompanyInputs",
+    "CompanyScores",
+    "score_universe",
     "CompositeConfig",
     "CompositeResult",
     "MilestoneConfig",

@@ -4,7 +4,7 @@ An internal research tool for screening and diligence on small-cap healthcare co
 Phase 1 builds the screener: a daily universe from Finviz, scores computed in-house, and a
 screen with a company page.
 
-Status: **Phase 1, Step 3** done (all scores and the Composite). Next: Step 4, formula configuration and quirk switches.
+Status: **Phase 1, Step 4** done for the pure-Python part (scores, Composite, versioned formula configuration and quirk switches). Next: Step 5, data model and migrations.
 
 ## Repository layout
 
@@ -72,7 +72,7 @@ Only `platform` has code so far; the other apps are empty modules that later ste
 ## Scoring engine
 
 `backend/scoring_engine/` computes the scores from plain data and has no infrastructure
-dependencies (a test enforces this). It provides all the scores and the Composite:
+dependencies (a test enforces this). It provides all the scores and the Composite, driven by a versioned `FormulaVersion` (every constant plus the parity quirk switches; `score_universe` scores a whole universe under one version):
 
 | Score | Meaning |
 |---|---|

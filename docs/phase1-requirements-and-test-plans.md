@@ -487,7 +487,7 @@ Feature: Milestone and Composite
 
 ## Step 4: Formula configuration and quirk switches
 
-**Depends on:** Steps 1 to 3. **Size:** S.
+**Status: done for the pure-Python part** (code in `backend/scoring_engine/formula.py`, `effective_runway.py` and `score.py`, tests in `backend/tests/scoring_engine/`). The database table and its immutability trigger arrive with Step 5. **Depends on:** Steps 1 to 3. **Size:** S.
 
 ```gherkin
 Feature: Versioned scoring configuration
@@ -526,14 +526,15 @@ Feature: Versioned scoring configuration
 **Acceptance criteria**
 - A4.1 Parity version reproduces the whole golden suite.
 - A4.2 Every constant in Steps 1 to 3 is read from configuration.
-- A4.3 Each switch has a test showing both behaviours.
-- A4.4 A formula version used by a run cannot be modified.
+- A4.3 Each switch has a test showing both behaviours. `earnings_past_is_imminent` and `runway_as_filed` are tested in Step 4; `ocf_ytd_naive_sum` and `trial_burn_on_profitable` are tested in Step 12 and `carry_forward` in Step 15, where those behaviours are implemented. Step 4 stores and validates all five.
+- A4.4 A formula version used by a run cannot be modified (modelled in memory in Step 4; enforced by the database from Step 5).
 
 **Open items**
 | Item | Default |
 |---|---|
 | Which switches are on in the first production version | Parity on for scoring quirks, carry-forward on |
 | Who approves moving from parity to a fixed version | The product owner |
+| Semantic validation (for example weights summing to 1) | Not enforced; only keys and types are validated |
 
 **Test plan**
 | ID | Level | Test | Pass condition |
@@ -542,7 +543,7 @@ Feature: Versioned scoring configuration
 | T4.2 | Unit | Alter each constant, confirm the right output moves | Only the expected output changes |
 | T4.3 | Unit | Each switch both ways | As table |
 | T4.4 | Unit | Schema validation with bad keys and types | Named errors |
-| T4.5 | Integration | Edit a used version | Rejected |
+| T4.5 | Unit, then integration | Edit a used version | Rejected (in-memory registry now; database check in Step 5) |
 
 ---
 
