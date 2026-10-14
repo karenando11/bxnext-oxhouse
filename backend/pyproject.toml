@@ -1,8 +1,7 @@
 [project]
 name = "oxhouse-research"
 version = "0.1.0"
-description = "OxHouse Research: screener and research tool for small-cap healthcare"
-readme = "README.md"
+description = "OxHouse Research backend: screener and research tool for small-cap healthcare"
 requires-python = ">=3.12"
 dependencies = [
     "django>=5.2,<6.0",

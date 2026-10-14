@@ -15,12 +15,13 @@ services:
       timeout: 5s
       retries: 10
 
-  # The containerised application. Local development normally runs Django on the host
+  # The containerised Django backend. Local development normally runs Django on the host
   # (see the Makefile) and only starts the database. Use: docker compose --profile app up
-  web:
+  # A `frontend` service will be added here beside it when the React app arrives.
+  backend:
     profiles: ["app"]
-    build: .
-    env_file: .env
+    build: ./backend
+    env_file: backend/.env
     environment:
       DATABASE_URL: postgres://oxhouse:oxhouse@db:5432/oxhouse
     depends_on:

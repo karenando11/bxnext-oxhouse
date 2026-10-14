@@ -19,6 +19,9 @@ dist/
 build/
 *.egg-info/
 
+# Frontend (React) tooling, ready for when frontend/ is added
+node_modules/
+
 # Local data
 pgdata/
 *.sqlite3

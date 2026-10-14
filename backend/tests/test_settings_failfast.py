@@ -11,7 +11,7 @@ import pytest
 
 from config.envconfig import REQUIRED_VARIABLES
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+BACKEND_ROOT = Path(__file__).resolve().parent.parent
 
 LOAD_SETTINGS = (
     "from django.conf import settings; settings.SECRET_KEY"  # triggers the lazy settings import
@@ -29,7 +29,7 @@ def test_settings_fail_fast_naming_the_missing_variable(missing: str) -> None:
     env.pop(missing)
     result = subprocess.run(
         [sys.executable, "-c", LOAD_SETTINGS],
-        cwd=REPO_ROOT,
+        cwd=BACKEND_ROOT,
         env=env,
         capture_output=True,
         text=True,

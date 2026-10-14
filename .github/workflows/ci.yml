@@ -9,10 +9,16 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# One job per component. A `frontend` job will be added beside `backend` when the React app
+# arrives. Branch protection should require each job by name.
 jobs:
-  test:
+  backend:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: backend
 
     services:
       postgres:
@@ -39,6 +45,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+          cache-dependency-glob: backend/uv.lock
           python-version: "3.12"
 
       - name: Install dependencies
