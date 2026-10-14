@@ -1,0 +1,33 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: oxhouse
+      POSTGRES_PASSWORD: oxhouse
+      POSTGRES_DB: oxhouse
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oxhouse -d oxhouse"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # The containerised application. Local development normally runs Django on the host
+  # (see the Makefile) and only starts the database. Use: docker compose --profile app up
+  web:
+    profiles: ["app"]
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://oxhouse:oxhouse@db:5432/oxhouse
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+volumes:
+  pgdata:

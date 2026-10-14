@@ -1,0 +1,66 @@
+[project]
+name = "oxhouse-research"
+version = "0.1.0"
+description = "OxHouse Research: screener and research tool for small-cap healthcare"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "django>=5.2,<6.0",
+    "gunicorn>=23.0",
+    "psycopg[binary]>=3.2",
+    "whitenoise>=6.8",
+]
+
+[dependency-groups]
+dev = [
+    "django-stubs[compatible-mypy]>=5.1",
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "pytest-django>=4.9",
+    "pytest-env>=1.1",
+    "ruff>=0.8",
+]
+
+[tool.uv]
+# The repository is an application, not an installable package.
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["migrations"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "DJ"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra --strict-markers"
+filterwarnings = [
+    # staticfiles/ only exists after collectstatic (production image); harmless in dev and tests.
+    "ignore:No directory at.*staticfiles:UserWarning",
+]
+# "D:" sets a value only when the variable is not already defined, so CI and
+# local overrides win over these test defaults.
+env = [
+    "D:DJANGO_SECRET_KEY=test-only-secret-key-not-for-production",
+    "D:DATABASE_URL=postgres://oxhouse:oxhouse@localhost:5432/oxhouse",
+]
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["mypy_django_plugin.main"]
+check_untyped_defs = true
+disallow_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+exclude = ["migrations", "\\.venv"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+[tool.django-stubs]
+django_settings_module = "config.settings"
