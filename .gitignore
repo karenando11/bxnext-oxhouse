@@ -23,6 +23,7 @@ build/
 node_modules/
 
 # Local data
+backend/tests/fixtures/private/
 pgdata/
 *.sqlite3
 

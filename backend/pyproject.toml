@@ -37,6 +37,9 @@ DJANGO_SETTINGS_MODULE = "config.settings"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-ra --strict-markers"
+markers = [
+    "golden: needs the private golden export fixture (see tests/scoring_engine/conftest.py)",
+]
 filterwarnings = [
     # staticfiles/ only exists after collectstatic (production image); harmless in dev and tests.
     "ignore:No directory at.*staticfiles:UserWarning",

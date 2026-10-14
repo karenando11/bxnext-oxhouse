@@ -1,0 +1,51 @@
+"""Pure-Python scoring package.
+
+No Django, database, network or clock access. The pipeline passes plain data in and receives
+plain data back, so the golden regression suite runs without any infrastructure.
+"""
+
+from scoring_engine.rounding import DISPLAY_DECIMALS, display_score, round_half_up
+from scoring_engine.topology import (
+    DEFAULT_CONFIG,
+    DIMENSIONS,
+    CompanyPeerInput,
+    DimensionStat,
+    PeerGroupStat,
+    PeerScores,
+    TopologyConfig,
+    TopologyOutput,
+    TopologyResult,
+    compute_topology,
+    group_statistics,
+    mcap_bucket,
+    median_and_mad,
+    peer_group_key,
+    recency_from_z,
+    scores_from_z,
+    topology_scores,
+    z_scores,
+)
+
+__all__ = [
+    "DEFAULT_CONFIG",
+    "DIMENSIONS",
+    "DISPLAY_DECIMALS",
+    "CompanyPeerInput",
+    "DimensionStat",
+    "PeerGroupStat",
+    "PeerScores",
+    "TopologyConfig",
+    "TopologyOutput",
+    "TopologyResult",
+    "compute_topology",
+    "display_score",
+    "group_statistics",
+    "mcap_bucket",
+    "median_and_mad",
+    "peer_group_key",
+    "recency_from_z",
+    "round_half_up",
+    "scores_from_z",
+    "topology_scores",
+    "z_scores",
+]

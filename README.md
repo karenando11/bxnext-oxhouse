@@ -4,7 +4,7 @@ An internal research tool for screening and diligence on small-cap healthcare co
 Phase 1 builds the screener: a daily universe from Finviz, scores computed in-house, and a
 screen with a company page.
 
-Status: **Phase 1, Step 0** (project skeleton and CI). No business logic yet.
+Status: **Phase 1, Step 1** done (Outlier, Divergence and Recency scoring). Next: Step 2, Cash Health.
 
 ## Repository layout
 
@@ -12,6 +12,7 @@ Status: **Phase 1, Step 0** (project skeleton and CI). No business logic yet.
 backend/              Django application (API, pipeline, scoring)
   apps/               one Django app per area of responsibility
   config/             project settings, URLs, environment parsing
+  scoring_engine/     pure-Python scoring: no Django, database, network or clock
   tests/              pytest suite
   Dockerfile
   pyproject.toml      dependencies and tool configuration (uv)
@@ -67,6 +68,32 @@ Never commit secrets.
 | `web` | HTTP views for the screener, company page and pipeline health |
 
 Only `platform` has code so far; the other apps are empty modules that later steps fill in.
+
+## Scoring engine
+
+`backend/scoring_engine/` computes the scores from plain data and has no infrastructure
+dependencies (a test enforces this). It currently provides the peer-relative scores:
+
+| Score | Meaning |
+|---|---|
+| Outlier | how unusual a company is against its peers, in either direction (0 to 10) |
+| Divergence | which direction that unusualness points (signed) |
+| Recency | how fresh it is: 1.0, 0.75, 0.5 or 0.3 |
+
+Peers are companies with the same Finviz industry and market cap bucket (Nano, Micro, Small,
+Mid) within the healthcare universe. Pass the **whole** universe to `compute_topology`; peer
+statistics depend on every member. `round_half_up` and `display_score` reproduce the display
+rounding of the existing system. Constants live in `TopologyConfig`, and its docstring records
+which ones the golden data pins down and which come from documentation only.
+
+### Golden fixtures
+
+Regression tests compare against a day of stored scores (1,053 companies). That file holds
+licensed Finviz-derived data, so it is **not** committed. Place
+`golden_export_2026-10-12.csv` in `backend/tests/fixtures/private/` (git-ignored) or set
+`OXHOUSE_GOLDEN_EXPORT` to its path. Without it, the tests marked `golden` are skipped with a
+message saying why; with it they must all pass. CI currently skips them until the file is made
+available to it through private storage.
 
 ## Development commands
 
