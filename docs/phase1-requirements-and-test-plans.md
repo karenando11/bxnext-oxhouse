@@ -262,7 +262,7 @@ Feature: Peer-relative scores (Outlier, Divergence, Recency)
 
 ## Step 2: Scoring, Cash Health
 
-**Depends on:** none. **Size:** M. Pure Python.
+**Status: done** (code in `backend/scoring_engine/cash_health.py`, tests in `backend/tests/scoring_engine/`). **Depends on:** none. **Size:** M. Pure Python.
 
 ```gherkin
 Feature: Cash Health score

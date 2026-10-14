@@ -4,6 +4,19 @@ No Django, database, network or clock access. The pipeline passes plain data in 
 plain data back, so the golden regression suite runs without any infrastructure.
 """
 
+from scoring_engine.cash_health import (
+    CashHealthConfig,
+    CashHealthInput,
+    CashHealthResult,
+    CashHealthTerm,
+    base_score,
+    cash_health,
+    catalyst_dampener,
+    dampener_factor_for_months,
+    parse_clinical_date,
+    parse_completion_date,
+    runway_cap,
+)
 from scoring_engine.rounding import DISPLAY_DECIMALS, display_score, round_half_up
 from scoring_engine.topology import (
     DEFAULT_CONFIG,
@@ -27,6 +40,17 @@ from scoring_engine.topology import (
 )
 
 __all__ = [
+    "CashHealthConfig",
+    "CashHealthInput",
+    "CashHealthResult",
+    "CashHealthTerm",
+    "base_score",
+    "cash_health",
+    "catalyst_dampener",
+    "dampener_factor_for_months",
+    "parse_clinical_date",
+    "parse_completion_date",
+    "runway_cap",
     "DEFAULT_CONFIG",
     "DIMENSIONS",
     "DISPLAY_DECIMALS",

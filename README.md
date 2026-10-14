@@ -4,7 +4,7 @@ An internal research tool for screening and diligence on small-cap healthcare co
 Phase 1 builds the screener: a daily universe from Finviz, scores computed in-house, and a
 screen with a company page.
 
-Status: **Phase 1, Step 1** done (Outlier, Divergence and Recency scoring). Next: Step 2, Cash Health.
+Status: **Phase 1, Step 2** done (Outlier, Divergence, Recency and Cash Health scoring). Next: Step 3, Milestone and Composite.
 
 ## Repository layout
 
@@ -72,13 +72,14 @@ Only `platform` has code so far; the other apps are empty modules that later ste
 ## Scoring engine
 
 `backend/scoring_engine/` computes the scores from plain data and has no infrastructure
-dependencies (a test enforces this). It currently provides the peer-relative scores:
+dependencies (a test enforces this). It currently provides the peer-relative scores and Cash Health:
 
 | Score | Meaning |
 |---|---|
 | Outlier | how unusual a company is against its peers, in either direction (0 to 10) |
 | Divergence | which direction that unusualness points (signed) |
 | Recency | how fresh it is: 1.0, 0.75, 0.5 or 0.3 |
+| Cash Health | balance-sheet strength, capped by runway and dampened by how far off the next catalyst is (0 to 10) |
 
 Peers are companies with the same Finviz industry and market cap bucket (Nano, Micro, Small,
 Mid) within the healthcare universe. Pass the **whole** universe to `compute_topology`; peer
