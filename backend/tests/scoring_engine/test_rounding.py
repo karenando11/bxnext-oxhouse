@@ -51,4 +51,4 @@ def test_outlier_and_divergence_are_displayed_to_one_decimal() -> None:
 
 def test_unknown_score_names_are_rejected() -> None:
     with pytest.raises(KeyError):
-        display_score("composite", 1.0)
+        display_score("not_a_score", 1.0)

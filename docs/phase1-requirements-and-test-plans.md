@@ -368,7 +368,7 @@ Feature: Cash Health score
 
 ## Step 3: Scoring, Milestone and Composite
 
-**Depends on:** Steps 1 and 2. **Size:** M. Pure Python.
+**Status: done** (code in `backend/scoring_engine/milestone.py` and `composite.py`, tests in `backend/tests/scoring_engine/`). **Depends on:** Steps 1 and 2. **Size:** M. Pure Python.
 
 ```gherkin
 Feature: Milestone and Composite
@@ -450,14 +450,14 @@ Feature: Milestone and Composite
 
   Scenario: Golden universe
     Given the 1,053 golden rows
-    Then Milestone matches for the 621 rows that need no hidden eps_this value
-    And the remaining 432 rows match when the correct eps_this bucket is supplied
+    Then Milestone matches for the 621 rows that need no eps_this value
+    And every remaining row is explained by some eps_this bucket, since the golden export has that column blank
     And Composite matches within rounding for all 1,053
 ```
 
 **Acceptance criteria**
 - A3.1 All 515 floor rows match; all 93 rows without an earnings date match.
-- A3.2 621 rows match with `eps_this` absent; the 432 others match with the inferred bucket.
+- A3.2 621 rows match with `eps_this` absent; each of the 432 others is explained by some `eps_this` bucket (the export has the column blank).
 - A3.3 Composite matches within 0.045 on all 1,053 rows (rounding tolerance).
 - A3.4 The nine fixtures match.
 - A3.5 Components are returned with the scores.
@@ -465,7 +465,7 @@ Feature: Milestone and Composite
 **Open items**
 | Item | Default |
 |---|---|
-| Real `eps_this` values: expected KTTA >50; RZLT, SMMT, IART 0 to 20; MDXG, CNMD, HUM, NBTX 0 or below | The 432-row test is marked expected-fail until the values arrive; ingestion always reads the column |
+| Real `eps_this` values | Resolved: Finviz returns a percent string (for example `10.95%`); the parser stores the number, a blank is stored as null, and the EPS bands (>50, >20, >0) apply. Spot-checked against 15 real values, all matching the stored Milestone. Ingestion always reads the column |
 | `now` definition | The Stage A timestamp (16:30 ET) |
 | Stale earnings dates score 10 | Parity quirk, switchable in Step 4 |
 
@@ -479,7 +479,7 @@ Feature: Milestone and Composite
 | T3.5 | Unit | Boost table, including runway not shorter | synthetic | Exact |
 | T3.6 | Unit | Rows without earnings date | F1 (93 rows) | 93 of 93 |
 | T3.7 | Unit | Rows needing no `eps_this` | F1 | 621 of 621 |
-| T3.8 | Unit | 432 rows with supplied buckets | F1 plus inferred buckets | 432 of 432, marked expected-fail until real values |
+| T3.8 | Unit | Remaining rows against `eps_this` buckets | F1 | Every row explained by some bucket |
 | T3.9 | Unit | Composite formula | F1 | Within 0.045 on 1,053 |
 | T3.10 | Unit | Nine fixtures | F3 | Exact |
 
@@ -1992,7 +1992,7 @@ Feature: Acceptance against the current system
 
 | # | Open item | Blocks | Default | Owner |
 |---|---|---|---|---|
-| O1 | Real `eps_this` values | Step 3 (432 rows) | Expected-fail test, column always ingested | Product owner |
+| O1 | Real `eps_this` values | Step 3 (432 rows) | Resolved: percent string stored as a number; spot-checked on 15 real values | Product owner |
 | O2 | Raw Finviz CSV sample | Step 10 | Engineer downloads one | Engineer |
 | O3 | Recorded SEC responses for six sample cases | Steps 11, 12 | Engineer records from production host | Engineer |
 | O4 | Trial-burn details: active statuses, multi-phase, R&D fallback, annual vs latest operating cash flow | Step 12 | Defaults in Step 12 | Product owner |

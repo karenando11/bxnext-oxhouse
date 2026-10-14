@@ -15,6 +15,8 @@ from decimal import ROUND_HALF_UP, Decimal
 # (Recency is one of 1.0, 0.75, 0.5 or 0.3 and must never be rounded to one decimal).
 DISPLAY_DECIMALS: dict[str, int | None] = {
     "cash_health": 1,
+    "milestone": 1,
+    "composite": 1,
     "outlier": 1,
     "divergence": 1,
     "recency": None,

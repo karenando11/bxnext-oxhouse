@@ -17,6 +17,16 @@ from scoring_engine.cash_health import (
     parse_completion_date,
     runway_cap,
 )
+from scoring_engine.composite import CompositeConfig, CompositeResult, composite
+from scoring_engine.milestone import (
+    MilestoneConfig,
+    MilestoneInput,
+    MilestoneResult,
+    MilestoneTerm,
+    milestone,
+    parse_earnings_date,
+    time_decay,
+)
 from scoring_engine.rounding import DISPLAY_DECIMALS, display_score, round_half_up
 from scoring_engine.topology import (
     DEFAULT_CONFIG,
@@ -40,6 +50,16 @@ from scoring_engine.topology import (
 )
 
 __all__ = [
+    "CompositeConfig",
+    "CompositeResult",
+    "MilestoneConfig",
+    "MilestoneInput",
+    "MilestoneResult",
+    "MilestoneTerm",
+    "composite",
+    "milestone",
+    "parse_earnings_date",
+    "time_decay",
     "CashHealthConfig",
     "CashHealthInput",
     "CashHealthResult",
