@@ -112,6 +112,9 @@ class RunwayCalc(models.Model):
         blank=True,
         help_text="One entry per phase: phase, active_trial_count, monthly_rate_usd, amount_usd.",
     )
+    notes = models.TextField(
+        blank=True, help_text="Source notes exactly as delivered (semicolon separated)."
+    )
     carried_forward = models.BooleanField(default=False)
     carried_from_date = models.DateField(null=True, blank=True)
 

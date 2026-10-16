@@ -85,6 +85,7 @@ class CompanyPage(models.Model):
     field_meta = models.JSONField(
         help_text="Per source group: its as-of date, age in days, staleness and reason codes."
     )
+    is_fixture = models.BooleanField(help_text="True when the score run came from a fixture load.")
 
     class Meta:
         managed = False

@@ -382,6 +382,7 @@ def test_company_page_joins_the_exact_rows_the_score_used() -> None:
         "catalyst",
         "short_volume",
         "insider",
+        "trial_lists",
     }
     assert page.field_meta["market"]["as_of"] == DAY.isoformat()
     assert page.field_meta["runway"]["carried_forward"] is False
@@ -403,12 +404,12 @@ def test_company_page_uses_only_the_latest_completed_run() -> None:
 
 
 @pytest.mark.django_db
-def test_company_page_marks_missing_market_data_with_a_reason() -> None:
+def test_company_page_marks_missing_source_data_with_a_reason() -> None:
     co = f.company()
     f.score_result(f.score_run(), co)
     page = CompanyPage.objects.get(pk=co.pk)
     assert page.price is None
-    assert page.field_meta["market"]["reasons"] == ["fixture_not_available"]
+    assert page.field_meta["market"]["reasons"] == []
     assert page.field_meta["short_volume"]["reasons"] == ["not_in_finra_file"]
     assert page.field_meta["short_volume"]["is_stale"] is True
 

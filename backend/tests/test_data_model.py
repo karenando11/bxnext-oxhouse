@@ -180,8 +180,9 @@ def test_sec_fact_natural_key_treats_missing_period_start_as_equal() -> None:
 
 
 @pytest.mark.django_db
-def test_company_cik_is_unique_when_present_and_may_be_missing_repeatedly() -> None:
-    _duplicate_is_rejected(lambda: f.company(cik="0000012345"))
+def test_company_cik_may_repeat_for_securities_of_one_issuer_and_may_be_missing() -> None:
+    f.company(cik="0000012345")
+    f.company(cik="0000012345")  # a share class or when-issued line of the same issuer
     f.company(cik=None)
     f.company(cik=None)
 

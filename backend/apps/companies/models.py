@@ -23,10 +23,10 @@ class Company(models.Model):
 
     class Meta:
         verbose_name_plural = "companies"
+        # Not unique: two listed securities of one issuer (for example a share class or a
+        # when-issued line) share a CIK, and each is scored as its own company.
+        indexes = [models.Index(fields=["cik"], name="company_cik")]
         constraints = [
-            models.UniqueConstraint(
-                fields=["cik"], condition=models.Q(cik__isnull=False), name="company_cik_unique"
-            ),
             models.CheckConstraint(
                 condition=models.Q(cik__isnull=True) | models.Q(cik__regex=r"^[0-9]{10}$"),
                 name="company_cik_ten_digits",

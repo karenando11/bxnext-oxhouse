@@ -630,7 +630,7 @@ Feature: Phase 1 data model
 
 ## Step 6: Golden-data loader
 
-**Depends on:** Step 5. **Size:** S.
+**Status: done** (`backend/apps/platform/golden.py` and the `load_golden` command; tests in `backend/tests/test_golden_loader.py`). **Depends on:** Step 5. **Size:** S.
 
 ```gherkin
 Feature: Load a golden day into the database
@@ -670,7 +670,7 @@ Feature: Load a golden day into the database
 - A6.1 1,053 companies and snapshots load.
 - A6.2 Reading back the loaded values equals the file for every mapped column.
 - A6.3 Re-running changes nothing.
-- A6.4 Fixture rows are marked and the UI warns.
+- A6.4 Fixture rows are marked and the UI warns. Until the screens exist, `/healthz` reports `data_source` as `fixture`, `live` or `none`, and the `company_page` view carries `is_fixture`.
 - A6.5 Every page field the export cannot supply is NULL with reason `fixture_not_available`.
 
 **Open items**
@@ -679,6 +679,10 @@ Feature: Load a golden day into the database
 | Page fields 15 to 17 (short volume), 34 to 39 (insider) and 52 to 55 (trial lists) are absent from the golden file | NULL with reason `fixture_not_available`; recorded fixtures F11 and F12 fill them in Steps 11A and 11B |
 | The golden file lacks per-study lists and balance-sheet dates | Those columns stay NULL; the company page trial list is empty for fixtures |
 | Whether the fixture files may be committed (they contain licensed Finviz-derived data) | Kept out of the repository; fetched from private storage in CI |
+| The runway export is dated 2026-10-14, two days after the golden day | Its cash, burn, source and notes are overlaid on the golden day's runway rows; the stored `runway_months` stays the golden day's value, so cash divided by burn can differ slightly from it. The arithmetic check against the export itself is Step 12 |
+| The export has no balance-sheet dates | `cash_end_date` stays NULL; `calc_date` is the export's runway as-of date |
+| The export has no sector column | Sector is stored as "Healthcare", since the export is the `sec_healthcare` universe |
+| Two securities of one issuer share a CIK (for example MMED and MMEDV) | CIK is no longer unique on `company`; each listed security is its own company |
 
 **Test plan**
 | ID | Level | Test | Pass condition |
@@ -687,7 +691,7 @@ Feature: Load a golden day into the database
 | T6.2 | Integration | Round-trip every column against the file | Equal |
 | T6.3 | Integration | Load twice | No change |
 | T6.4 | Integration | Blank cells | NULL |
-| T6.5 | Integration | Overlay runway export | 1,040 rows with cash and burn |
+| T6.5 | Integration | Overlay runway export | 995 rows with cash and burn: the export has 1,040 such rows, but 45 are tickers outside the 1,053-company universe |
 | T6.6 | Integration | Page fields absent from the export | NULL with reason `fixture_not_available` for all 1,053 companies |
 
 ---

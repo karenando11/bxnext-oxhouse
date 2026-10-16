@@ -355,7 +355,7 @@ Reason codes are not a table. They are a fixed list in the code base (section 4.
 
 | Table | Key columns | Notes |
 |---|---|---|
-| `company` | id, name, sector, industry, cik (nullable, 10 chars), country (nullable), is_adr (nullable), status (`active`, `delisted`, `unmapped`), first_seen_date, last_seen_date | Stable internal ID. Tickers are not keys. |
+| `company` | id, name, sector, industry, cik (nullable, 10 chars, indexed, not unique), country (nullable), is_adr (nullable), status (`active`, `delisted`, `unmapped`), first_seen_date, last_seen_date | Stable internal ID. Tickers are not keys. Two listed securities of one issuer can share a CIK. |
 | `ticker_history` | company_id, ticker, exchange, valid_from, valid_to | Unique on `ticker` where `valid_to` is null |
 | `company_sponsor_alias` | company_id, sponsor_name, source (`derived`, `sec_former_name`, `manual`), match_score, is_override, active | Drives ClinicalTrials.gov matching. Manual overrides win. Match threshold in settings (the current system uses 0.6) |
 
@@ -400,7 +400,7 @@ Rules (from the field list):
 |---|---|---|
 | `sec_filing` | id, company_id, accession (unique), form, filed_at, period_end, is_amendment, source_call_id | From `submissions`. Amendment forms (10-K/A, 10-Q/A) are recorded so restatements are detectable, which the old system could not do |
 | `sec_fact` | id, company_id, taxonomy (`us-gaap`, `ifrs-full`), tag, unit, period_start, period_end, value, accession, form, fy, fp, filed_at, source_call_id | Only allow-listed tags are stored. Unique on (company_id, taxonomy, tag, unit, period_start, period_end, accession). `filed_at` gives true point-in-time reads |
-| `runway_calc` | id, company_id, calc_date, method_version, status, reason_codes (array), cash_usd, cash_tag, cash_end_date (balance-sheet date), ocf_usd, ocf_tag, ocf_period_start, ocf_period_end, operating_burn_monthly_usd, trial_burn_monthly_usd, burn_total_monthly_usd, burn_source (`operating_cash_flow`, `rd_expense`, `phase_burn_only`), runway_months, runway_capped, cap_reason (`tiny_burn`, `zero_burn`), financing_date, source_fact_ids (jsonb), trial_burn_lines (jsonb), carried_forward, carried_from_date | Unique on (company_id, calc_date). Stores every input so any number can be traced. `trial_burn_lines` holds one entry per phase: {phase, active_trial_count, monthly_rate_usd, amount_usd} |
+| `runway_calc` | id, company_id, calc_date, method_version, status, reason_codes (array), cash_usd, cash_tag, cash_end_date (balance-sheet date), ocf_usd, ocf_tag, ocf_period_start, ocf_period_end, operating_burn_monthly_usd, trial_burn_monthly_usd, burn_total_monthly_usd, burn_source (`operating_cash_flow`, `rd_expense`, `phase_burn_only`), runway_months, runway_capped, cap_reason (`tiny_burn`, `zero_burn`), financing_date, source_fact_ids (jsonb), trial_burn_lines (jsonb), notes (source notes as delivered), carried_forward, carried_from_date | Unique on (company_id, calc_date). Stores every input so any number can be traced. `trial_burn_lines` holds one entry per phase: {phase, active_trial_count, monthly_rate_usd, amount_usd} |
 
 Runway rules (verified against the 1,040-row runway export, formula exact):
 - `runway_months = cash_usd / burn_total_monthly_usd`, capped at 360. Zero or negative burn gives 360 directly.

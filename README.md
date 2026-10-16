@@ -4,7 +4,7 @@ An internal research tool for screening and diligence on small-cap healthcare co
 Phase 1 builds the screener: a daily universe from Finviz, scores computed in-house, and a
 screen with a company page.
 
-Status: **Phase 1, Step 5** done (scores, versioned formula configuration, and the 23-table data model with its three read views). Next: Step 6, golden-data loader.
+Status: **Phase 1, Step 6** done (scores, versioned formula configuration, the 23-table data model with its read views, and the golden-day fixture loader). Next: Step 7, score run service.
 
 ## Repository layout
 
@@ -94,12 +94,27 @@ statistics depend on every member. `round_half_up` and `display_score` reproduce
 rounding of the existing system. Constants live in `TopologyConfig`, and its docstring records
 which ones the golden data pins down and which come from documentation only.
 
+### Loading the golden day as fixture data
+
+```bash
+cd backend
+python manage.py load_golden tests/fixtures/private/golden_export_2026-10-12.csv \
+    --runway tests/fixtures/private/edgar_runway_export_2026-10-14.csv
+```
+
+This loads the companies, tickers, Finviz snapshots, runway rows and catalyst signals for the golden
+day, then overlays cash, burn, burn source and notes from the runway export. It is safe to run
+again. Every row traces to a `fixture` source call, and `/healthz` reports `data_source: fixture`
+while the latest run is a fixture run. It is meant for development: point `DATABASE_URL` at a
+local or throwaway database, never at a shared one.
+
 ### Golden fixtures
 
 Regression tests compare against a day of stored scores (1,053 companies). That file holds
 licensed Finviz-derived data, so it is **not** committed. Place
-`golden_export_2026-10-12.csv` in `backend/tests/fixtures/private/` (git-ignored) or set
-`OXHOUSE_GOLDEN_EXPORT` to its path. Without it, the tests marked `golden` are skipped with a
+`golden_export_2026-10-12.csv` (and `edgar_runway_export_2026-10-14.csv` for the loader tests) in
+`backend/tests/fixtures/private/` (git-ignored) or set `OXHOUSE_GOLDEN_EXPORT` and
+`OXHOUSE_RUNWAY_EXPORT` to their paths. Without it, the tests marked `golden` are skipped with a
 message saying why; with it they must all pass. CI currently skips them until the file is made
 available to it through private storage.
 

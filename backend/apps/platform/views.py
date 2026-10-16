@@ -12,6 +12,8 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET
 
+from apps.platform.golden import latest_run_is_fixture
+
 logger = logging.getLogger(__name__)
 
 
@@ -30,6 +32,7 @@ def healthz(request: HttpRequest) -> JsonResponse:
         recorder = MigrationRecorder(connection)
         latest = recorder.migration_qs.order_by("-applied", "-id").first()
         applied = recorder.migration_qs.count()
+        fixture = latest_run_is_fixture()
     except DatabaseError:
         logger.exception("Health check could not reach the database")
         return JsonResponse({"status": "error", "database": "unavailable"}, status=503)
@@ -41,5 +44,6 @@ def healthz(request: HttpRequest) -> JsonResponse:
             "database": "ok",
             "schema_version": schema_version,
             "migrations_applied": applied,
+            "data_source": "none" if fixture is None else "fixture" if fixture else "live",
         }
     )
