@@ -461,6 +461,8 @@ Storing `inputs` and `components` as JSON on one row (not one row per component)
 | `screen_member` | screen_run_id, company_id, passed, excluded_reasons (array), rank | Reasons record every failed filter, not only the first |
 | `funnel_event` | company_id, as_of_date, from_state, to_state, reason | Who entered or left the list and why |
 
+The filter logic is pure Python in `apps/screener/filters.py`; `apps/screener/service.py` loads a score run's rows, runs ad-hoc screens without writing anything, materialises the default screen, and writes the funnel events.
+
 Filters are applied after scoring, across the whole universe. Peer groups and z-scores are computed over all names, then filters narrow the list. Ad-hoc filter changes in the UI are computed live from `score_result` and `finviz_snapshot`. Only the default screen is stored.
 
 ### 4.8 Quirk switches (stored in `formula_version.quirks`)

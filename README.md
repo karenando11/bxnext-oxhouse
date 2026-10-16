@@ -4,7 +4,7 @@ An internal research tool for screening and diligence on small-cap healthcare co
 Phase 1 builds the screener: a daily universe from Finviz, scores computed in-house, and a
 screen with a company page.
 
-Status: **Phase 1, Step 7** done (scores, versioned formula configuration, the 23-table data model with its read views, the golden-day fixture loader, and the score run service). Next: Step 8, screener service.
+Status: **Phase 1, Step 8** done (scores, versioned formula configuration, the 23-table data model with its read views, the golden-day fixture loader, the score run service, and the screener service). Next: Step 9, screener UI.
 
 ## Repository layout
 
@@ -118,6 +118,16 @@ This scores every company with a Finviz snapshot on that day under the latest `p
 version and stores the scores with the exact inputs and every component. A later run for the same
 day supersedes the earlier one, which is kept. A failed run leaves no partial rows and is recorded
 with its error.
+
+### Screening a scored day
+
+```bash
+python manage.py screen_day 2026-10-12
+```
+
+This stores the default screen for the latest completed score run of that day (every company, with
+every filter it failed) and writes the funnel events against the previous day. Ad-hoc screens with
+any filters are computed live from the stored scores by `apps.screener.service.adhoc_screen`.
 
 ### Golden fixtures
 

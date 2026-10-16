@@ -757,7 +757,7 @@ Feature: Scoring a day from stored data
 
 ## Step 8: Screener service
 
-**Depends on:** Step 7. **Size:** M.
+**Status: done** (`backend/apps/screener/filters.py`, `service.py` and the `screen_day` command; tests in `backend/tests/test_screener_filters.py` and `test_screener_service.py`). **Depends on:** Step 7. **Size:** M.
 
 ```gherkin
 Feature: Screening and the funnel
@@ -817,7 +817,11 @@ Feature: Screening and the funnel
 **Open items**
 | Item | Default |
 |---|---|
-| Null handling for filter fields | Excluded, with `<field>_missing` (to confirm) |
+| Null handling for filter fields | Excluded, with `<field>_missing` (to confirm). A filter set to null is switched off and raises no reason |
+| Reason codes of failed filters | `mcap_min`, `mcap_max`, `price_min`, `avg_vol_min`, `shares_outstanding_max`, `composite_floor`, `outlier_floor`, `sparse_group`; missing values give `mcap_missing`, `price_missing`, `avg_vol_missing`, `shares_outstanding_missing`. A missing market cap gives one reason, not two |
+| Golden-day counts | The counts 339, 139, 88, 62 and 46 are reproduced from the stored composite. Scored without `eps_this` (blank in the export), our own composite passes 145 names on the default screen instead of 139, so the golden tests put the stored composite back before screening |
+| Funnel events | Recorded only when a company enters or leaves the passed list (including joining or leaving the universe); states are `passed`, `excluded` and `absent`; the first day has no events |
+| Near-the-line | Companies failing exactly one filter. A company failing only the composite floor counts only when it is within 0.5 below it; any other single failure always counts |
 | Near-the-line definition | As in the scenario, configurable |
 | Composite floor default: 5 gives about 139; about 5.6 gives about 80 | 5, adjustable |
 | Average volume unit confirmed as thousands | Assumed |
