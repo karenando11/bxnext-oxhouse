@@ -698,7 +698,7 @@ Feature: Load a golden day into the database
 
 ## Step 7: Score run service
 
-**Depends on:** Steps 4, 5, 6. **Size:** M.
+**Status: done** (`backend/apps/scoring/service.py` and the `score_day` command; tests in `backend/tests/test_score_run.py`). **Depends on:** Steps 4, 5, 6. **Size:** M.
 
 ```gherkin
 Feature: Scoring a day from stored data
@@ -729,7 +729,7 @@ Feature: Scoring a day from stored data
 ```
 
 **Acceptance criteria**
-- A7.1 All six score columns match the golden file for 1,053 rows.
+- A7.1 Cash Health, Outlier, Divergence and Recency match the golden file for all 1,053 rows. Milestone and Composite match for the rows that do not depend on `eps_this` (at least 621), because the export has that column blank; the other rows are covered by the Step 3 bucket test.
 - A7.2 Two runs give identical results.
 - A7.3 A forced failure leaves no visible partial run.
 - A7.4 A full-universe run completes in under 10 seconds.
@@ -739,11 +739,14 @@ Feature: Scoring a day from stored data
 | Item | Default |
 |---|---|
 | Keep superseded runs forever | Yes, with optional pruning of non-candidate JSON after a retention window |
+| Which runway and catalyst rows a run uses | The latest rows dated on or before the day, with no staleness check; Step 15 adds the fresh, carried-forward and expired resolution and fills `carried_inputs` |
+| The scorer's "now" | 16:30 US Eastern on the run's day (20:30 UTC in October), unless a run is given another time |
+| Run statuses | `running`, `complete`, `superseded` (a later complete run for the same day exists) and `failed` (with `error_text`); readers use the latest `complete` run |
 
 **Test plan**
 | ID | Level | Test | Pass condition |
 |---|---|---|---|
-| T7.1 | Integration | Full golden regression through the database | 1,053 of 1,053 |
+| T7.1 | Integration | Full golden regression through the database | 1,053 of 1,053 for the four scores that do not depend on `eps_this`; Milestone and Composite for at least 621 |
 | T7.2 | Integration | Run twice and diff | Identical |
 | T7.3 | Integration | Inject an exception at row 500 | No partial rows, failed status |
 | T7.4 | Integration | Peer stats equal Step 1 intermediate values | Equal |

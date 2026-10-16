@@ -36,6 +36,7 @@ class ScoreRun(models.Model):
     class Status(models.TextChoices):
         RUNNING = "running", "Running"
         COMPLETE = "complete", "Complete"
+        SUPERSEDED = "superseded", "Superseded by a later run for the same day"
         FAILED = "failed", "Failed"
 
     pipeline_run = models.ForeignKey(PipelineRun, null=True, blank=True, on_delete=models.PROTECT)
@@ -46,6 +47,7 @@ class ScoreRun(models.Model):
     universe_n = models.PositiveIntegerField(default=0)
     scored_n = models.PositiveIntegerField(default=0)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.RUNNING)
+    error_text = models.TextField(blank=True, help_text="Why the run failed.")
     peer_group_stats = models.JSONField(
         default=list,
         blank=True,

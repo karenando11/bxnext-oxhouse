@@ -28,7 +28,12 @@ from scoring_engine.milestone import (
     milestone,
     parse_earnings_date,
 )
-from scoring_engine.topology import CompanyPeerInput, TopologyResult, compute_topology
+from scoring_engine.topology import (
+    CompanyPeerInput,
+    PeerGroupStat,
+    TopologyResult,
+    compute_topology,
+)
 
 MARKET_TIMEZONE = ZoneInfo("America/New_York")
 
@@ -80,19 +85,33 @@ class CompanyScores:
     runway_used: float | None  # the runway the ceiling and boost saw
 
 
+@dataclass(frozen=True)
+class UniverseScores:
+    scores: dict[str, CompanyScores]
+    group_stats: tuple[PeerGroupStat, ...]  # median, MAD and count per peer group and dimension
+
+
 def score_universe(
     companies: Sequence[CompanyInputs], now: datetime, formula: FormulaVersion
 ) -> dict[str, CompanyScores]:
     """Score every company. Pass the whole universe; peer statistics depend on every member."""
+    return score_universe_with_stats(companies, now, formula).scores
+
+
+def score_universe_with_stats(
+    companies: Sequence[CompanyInputs], now: datetime, formula: FormulaVersion
+) -> UniverseScores:
+    """Like ``score_universe``, and also returns the peer group statistics used."""
     if now.tzinfo is None:
         raise ValueError("now must be timezone-aware")
     today = now.astimezone(MARKET_TIMEZONE).date()
     config, quirks = formula.config, formula.quirks
 
-    topology = compute_topology(
+    topology_output = compute_topology(
         [CompanyPeerInput(c.company_id, c.industry, c.mcap, c.peer_metrics) for c in companies],
         config.topology,
-    ).results
+    )
+    topology = topology_output.results
 
     scores: dict[str, CompanyScores] = {}
     for c in companies:
@@ -152,4 +171,4 @@ def score_universe(
             config.composite,
         )
         scores[c.company_id] = CompanyScores(c.company_id, peers, cash, stage, blend, runway)
-    return scores
+    return UniverseScores(scores, topology_output.group_stats)

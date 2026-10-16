@@ -4,7 +4,7 @@ An internal research tool for screening and diligence on small-cap healthcare co
 Phase 1 builds the screener: a daily universe from Finviz, scores computed in-house, and a
 screen with a company page.
 
-Status: **Phase 1, Step 6** done (scores, versioned formula configuration, the 23-table data model with its read views, and the golden-day fixture loader). Next: Step 7, score run service.
+Status: **Phase 1, Step 7** done (scores, versioned formula configuration, the 23-table data model with its read views, the golden-day fixture loader, and the score run service). Next: Step 8, screener service.
 
 ## Repository layout
 
@@ -107,6 +107,17 @@ day, then overlays cash, burn, burn source and notes from the runway export. It 
 again. Every row traces to a `fixture` source call, and `/healthz` reports `data_source: fixture`
 while the latest run is a fixture run. It is meant for development: point `DATABASE_URL` at a
 local or throwaway database, never at a shared one.
+
+### Scoring a stored day
+
+```bash
+python manage.py score_day 2026-10-12
+```
+
+This scores every company with a Finviz snapshot on that day under the latest `parity` formula
+version and stores the scores with the exact inputs and every component. A later run for the same
+day supersedes the earlier one, which is kept. A failed run leaves no partial rows and is recorded
+with its error.
 
 ### Golden fixtures
 

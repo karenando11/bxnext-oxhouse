@@ -38,7 +38,13 @@ from scoring_engine.milestone import (
     time_decay,
 )
 from scoring_engine.rounding import DISPLAY_DECIMALS, display_score, round_half_up
-from scoring_engine.score import CompanyInputs, CompanyScores, score_universe
+from scoring_engine.score import (
+    CompanyInputs,
+    CompanyScores,
+    UniverseScores,
+    score_universe,
+    score_universe_with_stats,
+)
 from scoring_engine.topology import (
     DEFAULT_CONFIG,
     DIMENSIONS,
@@ -61,6 +67,8 @@ from scoring_engine.topology import (
 )
 
 __all__ = [
+    "UniverseScores",
+    "score_universe_with_stats",
     "PARITY",
     "ConfigError",
     "FormulaConfig",
