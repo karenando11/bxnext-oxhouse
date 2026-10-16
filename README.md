@@ -4,7 +4,7 @@ An internal research tool for screening and diligence on small-cap healthcare co
 Phase 1 builds the screener: a daily universe from Finviz, scores computed in-house, and a
 screen with a company page.
 
-Status: **Phase 1, Step 4** done for the pure-Python part (scores, Composite, versioned formula configuration and quirk switches). Next: Step 5, data model and migrations.
+Status: **Phase 1, Step 5** done (scores, versioned formula configuration, and the 23-table data model with its three read views). Next: Step 6, golden-data loader.
 
 ## Repository layout
 
@@ -67,7 +67,12 @@ Never commit secrets.
 | `screener` | screen definitions, runs and the funnel log |
 | `web` | HTTP views for the screener, company page and pipeline health |
 
-Only `platform` has code so far; the other apps are empty modules that later steps fill in.
+Every app except `web` owns its tables (23 in total, listed in `docs/architecture-and-data-model.md`).
+`web` holds the `company_page` read model, a database view the API reads instead of joining base
+tables. The metric views `short_volume_metric` and `insider_metric_daily` are views too, backed by
+SQL functions that take a market date. Reason codes are a fixed list in
+`apps/platform/reasons.py`; the database rejects unknown codes. A formula version that a score run
+has used cannot be changed (a database trigger enforces it).
 
 ## Scoring engine
 

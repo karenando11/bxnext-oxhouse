@@ -412,7 +412,7 @@ Runway rules (verified against the 1,040-row runway export, formula exact):
 
 | Table | Key columns | Notes |
 |---|---|---|
-| `sec_form4_filing` | id, company_id, accession (unique), form (`4` or `4/A`), filed_at, period_of_report, primary_document, is_10b5_1, parse_status (`ok`, `failed`), parse_reason, source_call_id | Discovered from the submissions feed. `is_10b5_1` is the filing-level checkbox |
+| `sec_form4_filing` | id, company_id, accession (unique), form (`4` or `4/A`), filed_at, period_of_report, primary_document, is_10b5_1, amends_accession (for a 4/A, the filing it replaces), parse_status (`ok`, `failed`), parse_reason, source_call_id | Discovered from the submissions feed. `is_10b5_1` is the filing-level checkbox |
 | `sec_form4_transaction` | id, filing_id, line_no, reporting_owner_cik, reporting_owner_name, is_officer, is_director, is_ten_percent_owner, officer_title, transaction_date, transaction_code, shares, price_per_share, acquired_or_disposed, amount_usd | Non-derivative transactions. `amount_usd = shares × price_per_share`, null when either is missing |
 | `insider_metric_daily` (view) | company_id, as_of_date, window_days (90), filings_count, open_market_buys_count, open_market_sales_count, officers_directors_buying_count, officers_directors_selling_count, pct_10b5_1_dollars, status, reason_codes, age_days, is_stale | A database view over `sec_form4_filing` and `sec_form4_transaction`, not a table. Window and counts are computed as of `as_of_date`; `age_days` is the age of the latest successfully processed filing feed for the company and `is_stale` is true past 7 days. For a past date, the same SQL runs as a function of `as_of_date`
 

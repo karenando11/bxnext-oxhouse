@@ -549,7 +549,7 @@ Feature: Versioned scoring configuration
 
 ## Step 5: Data model and migrations
 
-**Depends on:** Step 0. **Size:** M.
+**Status: done** (models in `backend/apps/*/models.py`, migrations beside them, tests in `backend/tests/test_data_model.py` and `test_read_views.py`). **Depends on:** Step 0. **Size:** M.
 
 ```gherkin
 Feature: Phase 1 data model
@@ -609,6 +609,10 @@ Feature: Phase 1 data model
 | One schema with app-prefixed tables (versus several schemas) | One schema; a separate restricted schema only when positions arrive |
 | Array columns versus child tables for reason codes | PostgreSQL arrays; codes themselves are a list in code |
 | `company_page` as a view or a materialised table | View first; materialise only if slow or if vintage logic gets awkward (O25) |
+| Per-field reasons on `company_page` | `field_meta` carries as-of dates, ages and reason codes per source group; per-field reasons are filled in as the collectors (Steps 10 to 14) populate each field |
+| "Stale" for short volume | More than 5 weekdays since the latest trading day with data; market holidays are not modelled |
+| Amendments of Form 4 filings | A nullable `amends_accession` column on `sec_form4_filing` links a 4/A to the filing it replaces; the insider view drops the original only when the amendment parsed |
+| Adding a reason code | Needs a migration, because the database check constraints are generated from the list in code |
 
 **Test plan**
 | ID | Level | Test | Pass condition |
