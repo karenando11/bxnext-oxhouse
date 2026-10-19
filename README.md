@@ -4,7 +4,7 @@ An internal research tool for screening and diligence on small-cap healthcare co
 Phase 1 builds the screener: a daily universe from Finviz, scores computed in-house, and a
 screen with a company page.
 
-Status: **Phase 1, Step 8** done (scores, versioned formula configuration, the 23-table data model with its read views, the golden-day fixture loader, the score run service, and the screener service). Next: Step 9, screener UI.
+Status: **Phase 1, Step 9 backend** done (scores, versioned formula configuration, the 23-table data model with its read views, the golden-day fixture loader, the score run service, the screener service, and the screener JSON API). Next: Step 10, Finviz ingestion. The screener page itself is the React frontend's job.
 
 ## Repository layout
 
@@ -128,6 +128,12 @@ python manage.py screen_day 2026-10-12
 This stores the default screen for the latest completed score run of that day (every company, with
 every filter it failed) and writes the funnel events against the previous day. Ad-hoc screens with
 any filters are computed live from the stored scores by `apps.screener.service.adhoc_screen`.
+
+### API
+
+The backend serves JSON under `/api/` for the React frontend: sign-in, the screener table with live
+filters, why-excluded, near-the-line, the funnel log, saved screens and a CSV export. See
+`docs/api.md`.
 
 ### Golden fixtures
 

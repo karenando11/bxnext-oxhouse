@@ -181,3 +181,49 @@ def near_the_line(
                 continue
         near.append(outcome)
     return sorted(near, key=lambda o: (-o.row.composite, o.row.ticker))
+
+
+@dataclass(frozen=True)
+class FilterFailure:
+    """One failed filter with the company's actual value and the threshold it missed."""
+
+    reason: str
+    filter: str  # market_cap, price, avg_volume, shares_outstanding, composite, outlier, peer_group
+    actual: float | bool | None
+    threshold: float | bool | None
+    comparison: str  # "at_least", "at_most", "present" or "not_sparse"
+
+
+def explain_failures(row: ScreenRow, config: ScreenConfig) -> list[FilterFailure]:
+    """Every failed filter with its actual value and threshold, in the same order as the reasons."""
+    details: dict[str, FilterFailure] = {
+        MCAP_MISSING: FilterFailure(MCAP_MISSING, "market_cap", None, None, "present"),
+        MCAP_MIN: FilterFailure(
+            MCAP_MIN, "market_cap", row.mcap_musd, config.mcap_min_musd, "at_least"
+        ),
+        MCAP_MAX: FilterFailure(
+            MCAP_MAX, "market_cap", row.mcap_musd, config.mcap_max_musd, "at_most"
+        ),
+        PRICE_MISSING: FilterFailure(PRICE_MISSING, "price", None, None, "present"),
+        PRICE_MIN: FilterFailure(PRICE_MIN, "price", row.price, config.price_min, "at_least"),
+        AVG_VOL_MISSING: FilterFailure(AVG_VOL_MISSING, "avg_volume", None, None, "present"),
+        AVG_VOL_MIN: FilterFailure(
+            AVG_VOL_MIN, "avg_volume", row.avg_vol_k, config.avg_vol_min_k, "at_least"
+        ),
+        SHARES_MISSING: FilterFailure(SHARES_MISSING, "shares_outstanding", None, None, "present"),
+        SHARES_MAX: FilterFailure(
+            SHARES_MAX,
+            "shares_outstanding",
+            row.shr_out_m,
+            config.shares_outstanding_max_m,
+            "at_most",
+        ),
+        COMPOSITE_FLOOR: FilterFailure(
+            COMPOSITE_FLOOR, "composite", row.composite, config.composite_floor, "at_least"
+        ),
+        OUTLIER_FLOOR: FilterFailure(
+            OUTLIER_FLOOR, "outlier", row.outlier, config.outlier_floor, "at_least"
+        ),
+        SPARSE_GROUP: FilterFailure(SPARSE_GROUP, "peer_group", True, False, "not_sparse"),
+    }
+    return [details[reason] for reason in failed_filters(row, config)]

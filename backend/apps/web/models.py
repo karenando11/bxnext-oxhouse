@@ -87,6 +87,15 @@ class CompanyPage(models.Model):
     )
     is_fixture = models.BooleanField(help_text="True when the score run came from a fixture load.")
 
+    # Screener fields
+    shr_out_m = models.FloatField(null=True, help_text="Shares outstanding, millions.")
+    is_sparse = models.BooleanField(help_text="True when the peer group was too small to score.")
+    clinical_date = models.DateField(null=True, help_text="Next clinical catalyst date.")
+    clinical_phase = models.CharField(max_length=16, null=True)  # noqa: DJ001
+    clinical_overdue = models.BooleanField(null=True)
+    next_event_source = models.CharField(max_length=16, null=True)  # noqa: DJ001
+    financing_date = models.DateField(null=True, help_text="Date the cash runway ends.")
+
     class Meta:
         managed = False
         db_table = "company_page"

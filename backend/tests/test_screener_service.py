@@ -13,9 +13,8 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from apps.companies.models import Company
-from apps.platform.golden import load_golden
 from apps.scoring.models import ScoreResult, ScoreRun
-from apps.scoring.service import latest_complete_run, run_scoring
+from apps.scoring.service import latest_complete_run
 from apps.screener.filters import ScreenConfig, near_the_line
 from apps.screener.models import FunnelEvent, ScreenMember, ScreenRun
 from apps.screener.service import (
@@ -240,24 +239,6 @@ def test_the_screen_day_command(capsys: pytest.CaptureFixture[str]) -> None:
 def _golden(path: Path) -> list[dict[str, str]]:
     with path.open(newline="", encoding="utf-8") as handle:
         return list(csv.DictReader(handle))
-
-
-@pytest.fixture
-def golden_day(golden_path: Path, runway_path: Path) -> tuple[ScoreRun, list[dict[str, str]]]:
-    """The golden day scored, with the stored composite put back into each result.
-
-    The export has ``eps_this`` blank, so our own composite differs slightly from the stored one
-    for some rows. These tests check the filter logic against the counts the stored composite gives.
-    """
-    load_golden(golden_path, runway_path)
-    run = run_scoring(DAY1)
-    rows = _golden(golden_path)
-    stored = {r["ticker"]: float(r["composite_score"]) for r in rows}
-    results = list(ScoreResult.objects.filter(score_run=run).prefetch_related("company__tickers"))
-    for result in results:
-        result.composite = stored[result.company.tickers.get().ticker]
-    ScoreResult.objects.bulk_update(results, ["composite"])
-    return run, rows
 
 
 @pytest.mark.golden

@@ -841,7 +841,7 @@ Feature: Screening and the funnel
 
 ## Step 9: Screener UI
 
-**Depends on:** Step 8. **Size:** M.
+**Status: backend done; browser page pending.** The backend of this step is a JSON API (`backend/apps/web/`, documented in `docs/api.md`; tests in `backend/tests/test_screener_api.py`), because the user interface will be the React frontend. The browser page itself (the table, sliders, drawer and banner, T9.6 and T9.7) is frontend work. **Depends on:** Step 8. **Size:** M.
 
 ```gherkin
 Feature: Screener page
@@ -889,7 +889,11 @@ Feature: Screener page
 **Open items**
 | Item | Default |
 |---|---|
-| Table library | A small JavaScript table library with HTMX partials |
+| Table library | Chosen with the React frontend. The backend serves JSON, not HTMX partials |
+| Anonymous requests | The API answers 401 with the sign-in URL instead of redirecting; the frontend sends the user to its sign-in screen |
+| Sign-in | Session cookie with CSRF protection; no rate limit on login attempts yet |
+| Freshness | The banner text comes from the API (`stale_banner`), using the `stale.snapshot_days` setting (default 3) |
+| Golden-day count | 139 rows needs the stored composite, because the golden export has `eps_this` blank (see Step 8) |
 | Saved screens per user or shared | Shared, with owner recorded |
 | CSV export | Include |
 
@@ -900,8 +904,8 @@ Feature: Screener page
 | T9.2 | Integration | Partial endpoint for each filter change | Correct counts, under 500 ms |
 | T9.3 | Integration | Why-excluded for 5 sample tickers | Reasons and values correct |
 | T9.4 | Integration | Save and reload a screen | Equal filters |
-| T9.5 | Integration | Anonymous access | Redirect |
-| T9.6 | E2E | Browser test of slider, table and drawer | Passes |
+| T9.5 | Integration | Anonymous access | 401 with the sign-in URL on every endpoint (the API form of "redirect") |
+| T9.6 | E2E | Browser test of slider, table and drawer | Passes (frontend, pending) |
 | T9.7 | Manual | Usability checklist with two users | Signed off |
 
 ---
