@@ -27,6 +27,7 @@ from django.utils import timezone
 
 from apps.companies.models import Company, TickerHistory
 from apps.marketdata.models import FinvizSnapshot
+from apps.platform.bulk import upsert
 from apps.platform.models import PipelineRun, SourceCall
 from apps.platform.reasons import REASON_CODES
 from apps.sec.models import RunwayCalc
@@ -204,30 +205,6 @@ def _text(row: dict[str, str], column: str) -> str:
     return (row.get(column) or "").strip()
 
 
-def _upsert(
-    model: type[Any],
-    existing: dict[Any, Any],
-    wanted: dict[Any, dict[str, Any]],
-    create_with: dict[Any, dict[str, Any]],
-) -> None:
-    """Create the missing objects and update the existing ones, in bulk."""
-    to_create, to_update = [], []
-    update_fields: set[str] = set()
-    for key, values in wanted.items():
-        obj = existing.get(key)
-        if obj is None:
-            to_create.append(model(**create_with[key], **values))
-            continue
-        for name, value in values.items():
-            setattr(obj, name, value)
-        update_fields.update(values)
-        to_update.append(obj)
-    if to_create:
-        model.objects.bulk_create(to_create, batch_size=500)
-    if to_update:
-        model.objects.bulk_update(to_update, sorted(update_fields), batch_size=500)
-
-
 def _load_companies(rows: list[dict[str, str]], day: date) -> dict[str, Company]:
     tickers = [_text(row, "ticker") for row in rows]
     open_rows = TickerHistory.objects.select_related("company").filter(
@@ -295,7 +272,7 @@ def _load_snapshots(
             "earnings_date": earnings_date(text),
         }
         create_with[company.pk] = {"company": company, "as_of_date": day}
-    _upsert(FinvizSnapshot, existing, wanted, create_with)
+    upsert(FinvizSnapshot, existing, wanted, create_with)
     return len(wanted)
 
 
@@ -319,7 +296,7 @@ def _load_runways(rows: list[dict[str, str]], companies: dict[str, Company], day
             "runway_capped": _text(row, "runway_capped_derived") == "True",
         }
         create_with[key] = {"company": company, "calc_date": key[1]}
-    _upsert(RunwayCalc, existing, wanted, create_with)
+    upsert(RunwayCalc, existing, wanted, create_with)
     return len(wanted)
 
 
@@ -362,7 +339,7 @@ def _load_catalysts(rows: list[dict[str, str]], companies: dict[str, Company], d
             "next_event_source": source,
         }
         create_with[company.pk] = {"company": company, "as_of_date": day}
-    _upsert(CatalystSignal, existing, wanted, create_with)
+    upsert(CatalystSignal, existing, wanted, create_with)
     return len(wanted)
 
 

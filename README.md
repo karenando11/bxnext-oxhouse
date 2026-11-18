@@ -4,7 +4,7 @@ An internal research tool for screening and diligence on small-cap healthcare co
 Phase 1 builds the screener: a daily universe from Finviz, scores computed in-house, and a
 screen with a company page.
 
-Status: **Phase 1, Step 9 backend** done (scores, versioned formula configuration, the 23-table data model with its read views, the golden-day fixture loader, the score run service, the screener service, and the screener JSON API). Next: Step 10, Finviz ingestion. The screener page itself is the React frontend's job.
+Status: **Phase 1, Steps 0 to 10** built. Step 9 is backend only (the screener page is the React frontend's job). Step 10 (Finviz ingestion) is tested on synthetic exports only: the first real download, with `FINVIZ_AUTH_TOKEN`, is still to do. Next: Step 11, SEC collectors.
 
 ## Repository layout
 
@@ -134,6 +134,19 @@ any filters are computed live from the stored scores by `apps.screener.service.a
 The backend serves JSON under `/api/` for the React frontend: sign-in, the screener table with live
 filters, why-excluded, near-the-line, the funnel log, saved screens and a CSV export. See
 `docs/api.md`.
+
+### Finviz ingestion
+
+```bash
+export FINVIZ_AUTH_TOKEN=...   # never commit or paste it; it is never logged
+python manage.py finviz_contract_check --save tests/fixtures/private/finviz_raw.csv   # one real download, no database writes
+python manage.py ingest_finviz                 # download today's export and load the snapshot
+python manage.py ingest_finviz --file path.csv --date 2026-10-12   # load a saved raw file
+```
+
+The download is stored unchanged under `RAW_STORAGE_DIR` and recorded in `source_call`. A blank
+column, a large row-count change, a changed universe definition and similar problems are recorded
+as `data_quality_check` rows. Loading the same file for the same day twice changes nothing.
 
 ### Golden fixtures
 

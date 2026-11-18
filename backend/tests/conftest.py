@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import csv
+import ipaddress
 import os
+import socket
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -55,3 +57,22 @@ def golden_day(golden_path: Path, runway_path: Path) -> tuple[Any, list[dict[str
         result.composite = stored[result.company.tickers.get().ticker]
     ScoreResult.objects.bulk_update(results, ["composite"])
     return run, rows
+
+
+@pytest.fixture(autouse=True)
+def no_outbound_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Global rule: tests never reach the network. Only loopback (the test database) is allowed."""
+    real_connect = socket.socket.connect
+
+    def guarded(self: socket.socket, address: Any) -> Any:
+        if isinstance(address, tuple) and address:
+            host = str(address[0])
+            try:
+                loopback = ipaddress.ip_address(host).is_loopback
+            except ValueError:
+                loopback = host == "localhost"
+            if not loopback:
+                raise AssertionError(f"A test tried to open a network connection to {host}")
+        return real_connect(self, address)
+
+    monkeypatch.setattr(socket.socket, "connect", guarded)

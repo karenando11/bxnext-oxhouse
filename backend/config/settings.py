@@ -74,6 +74,9 @@ WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
 DATABASES = {"default": _config.database}
+
+# Where raw downloads are kept unchanged (local disk now; an object store later).
+RAW_STORAGE_DIR = Path(os.environ.get("RAW_STORAGE_DIR") or BASE_DIR / "var" / "raw")
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 AUTH_PASSWORD_VALIDATORS = [

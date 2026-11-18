@@ -912,7 +912,7 @@ Feature: Screener page
 
 ## Step 10: Finviz ingestion
 
-**Depends on:** Step 5. **Size:** M.
+**Status: built and tested against synthetic exports; the first real download has not happened.** Code is in `backend/apps/marketdata/finviz/` (column map, parser, download client, ingestion service) and `backend/apps/marketdata/storage.py`; the commands are `ingest_finviz` and `finviz_contract_check`; tests are `backend/tests/test_finviz_parser.py`, `test_finviz_client.py` and `test_finviz_ingest.py`. No real Finviz file or token was available when it was built, so the column map is unverified (see the open items). **Depends on:** Step 5. **Size:** M.
 
 ```gherkin
 Feature: Daily Finviz snapshot
@@ -982,12 +982,20 @@ Feature: Daily Finviz snapshot
 - A10.4 Identical re-downloads are idempotent.
 - A10.5 Failure stops Stage A and alerts.
 - A10.6 The token is read from a secret and never logged.
-- A10.7 All 50 columns are stored for every row; the duplicate headers are resolved by position.
+- A10.7 All 50 columns are stored for every row; the duplicate headers are resolved by position. Of the repeated headers, the occurrence whose values carry percent signs is used for percent columns, and the others are kept under `extras`. Proven on synthetic files; to be proven on the real file.
 
 **Open items**
 | Item | Default |
 |---|---|
-| A raw Finviz CSV sample (F6) | The engineer downloads one |
+| A raw Finviz CSV sample (F6) | Still needed. `python manage.py finviz_contract_check --save backend/tests/fixtures/private/finviz_raw.csv` downloads one with `FINVIZ_AUTH_TOKEN`, writes nothing to the database, and prints how every header lined up |
+| The column map (header texts per field, 50 columns) | Written from the data model's field list and Finviz's usual header texts, with aliases. **Unverified** against the reference workbook's "Finviz Column Map" sheet (F10) and a real file; a required header that is missing stops the load, any other missing header fails the blank-column check |
+| The `c=` column parameter of the export URL | Setting `finviz.columns`, empty by default, which uses the columns of the account's saved view 151. Set it to the 50 column ids to make the request self-contained |
+| Units of cells without a K, M, B or T suffix | Taken as already in the stored unit (market cap and shares in millions, average volume in thousands); a suffix is scaled. Confirm on the first real file |
+| Alerts | A stopped stage or a failed check is stored (a failed `data_quality_check`, a failed `source_call`) and logged as an error. Sending the email is Step 17 |
+| A failed data-quality check | The load stands and the run is marked `partial`; the download and format failures stop the stage. Step 16 decides what a partial market stage means for scoring |
+| Row-count comparison | Against the latest earlier day that has snapshots (which can be the fixture day), more than the `finviz.row_count_change_alert_pct` setting (20) fails |
+| Industry changes | The company's industry is updated and the change is stored in the `industry_changes` check detail; there is no history table, but every day's snapshot keeps its `industry_raw` |
+| Raw file storage | Local disk under `RAW_STORAGE_DIR` (default `backend/var/raw`, git-ignored), keyed by day and content hash; an object store replaces it later behind the same interface |
 | The two Finviz columns both headed "52-Week High" and "52-Week Low" | `w52h` and `w52l` store percent distance |
 | Finviz terms on storing daily history and on AI processing | To be checked before Phase 4; storage proceeds |
 | How ADRs and foreign listings are identified | Name patterns plus country field when present |
@@ -996,7 +1004,7 @@ Feature: Daily Finviz snapshot
 | ID | Level | Test | Data | Pass condition |
 |---|---|---|---|---|
 | T10.1 | Unit | Cell parsing table | synthetic | Exact |
-| T10.2 | Contract | Full parse of the raw CSV | F6 | Row and column counts match; spot-check 10 tickers |
+| T10.2 | Contract | Full parse of the raw CSV | F6 | Row and column counts match; spot-check 10 tickers. Pending the real file; passes on a synthetic export of all 50 columns |
 | T10.3 | Integration | Blank column check | F6 with a column blanked | Check fails, alert queued |
 | T10.4 | Integration | Row count anomaly | synthetic | Fails at 21 percent change |
 | T10.5 | Integration | Same file twice | F6 | No duplicate rows |
