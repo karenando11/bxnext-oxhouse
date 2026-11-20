@@ -72,6 +72,61 @@ do it on purpose: `make migrate ALLOW_REMOTE=1`.
 Health check: `curl http://localhost:8000/healthz` returns the database status and the
 latest applied migration, or `503` when the database is unreachable.
 
+## Local database and testing
+
+**Use PostgreSQL locally, not SQLite.** The data model relies on PostgreSQL features: database views
+and SQL functions, a trigger that freezes used formula versions, array and JSONB columns, partial
+unique indexes and check constraints. The migrations do not run on SQLite, and tests that passed on
+it would say little about production.
+
+### Three databases, kept apart
+
+| Database | Used for | How you get it |
+|---|---|---|
+| Development | Clicking around, loading fixture data, trying the API | `make docker-up` starts a throwaway PostgreSQL 16 container (or `make bootstrap` if you run Python on your machine) |
+| Tests | The pytest suite | Created and dropped by pytest on the same server (`test_oxhouse`); nothing to set up |
+| Shared or production (for example Neon) | The real thing | Never used for local work |
+
+### Set up and fill a development database
+
+```bash
+make docker-up                      # PostgreSQL and the backend; migrations apply on start
+make docker-user                    # create a sign-in for the API
+make docker-manage CMD="load_golden tests/fixtures/private/golden_export_2026-10-12.csv --runway tests/fixtures/private/edgar_runway_export_2026-10-14.csv"
+make docker-manage CMD="score_day 2026-10-12"
+make docker-manage CMD="screen_day 2026-10-12"
+```
+
+The two CSV files are licensed data that stay out of the repository: put them in
+`backend/tests/fixtures/private/` (git-ignored), which the container sees as `/app/tests/fixtures/private/`.
+The development database then holds the golden day as fixture data (`/healthz` reports
+`data_source: fixture`), scored and screened, ready for the API.
+
+To start again from nothing: `docker compose down -v`, then `make docker-up`. Loading and migrating
+are repeatable, so this is cheap.
+
+### Running the tests
+
+```bash
+make docker-test        # inside the container, against the container's database (simplest)
+make test               # on your machine, against the PostgreSQL that `make up` started
+```
+
+Tests marked `golden` need the private files and are skipped, with a message, when they are absent.
+
+### Staying away from a shared database
+
+- `make bootstrap`, `make migrate` and `make run` refuse to run when `backend/.env` names a database
+  that is not on this machine. Override on purpose with `ALLOW_REMOTE=1`.
+- The test suite and `load_golden` refuse a remote database as well (`OXHOUSE_ALLOW_REMOTE_TEST_DB=1`
+  and `--allow-remote` override them).
+- **A `DATABASE_URL` set in your shell wins over `backend/.env`.** If a command might hit the wrong
+  database, check `echo $DATABASE_URL` first and unset it. The Docker commands ignore both and always
+  use the container database.
+
+If several people need one shared development database (for example while building the frontend), a
+Neon branch is a good fit: it is a copy-on-write fork that you can reset. For solo work, Docker is simpler.
+
 ## Backend configuration
 
 Settings come from environment variables. The backend refuses to start if a required
