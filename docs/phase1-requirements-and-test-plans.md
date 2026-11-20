@@ -2,7 +2,7 @@
 
 Status: proposal for review. Nothing here has been implemented, and nothing has been written to the repository.
 
-This document turns the 24 Phase 1 steps (0 to 20, plus 11A, 11B and 13A) into Gherkin requirements with acceptance criteria, open items and test plans. It builds on the Phase 1 architecture and data model v5. Since v4, every company-page field is collected for every company in the universe each day, which is why FINRA short volume (11A) and Form 4 insider activity (11B) are Phase 1 steps. v5 consolidates storage to 23 tables (two metric tables become views, four explanatory tables become JSONB on their parent rows, reason codes become a list in code) and adds a rule that the API reads only one read model, the `company_page` view.
+This document turns the 24 Phase 1 steps (0 to 20, plus 11A, 11B and 13A) into Gherkin requirements with acceptance criteria, open items and test plans. It builds on the Phase 1 architecture and data model v5. Since v4, every company-page field is collected for every company in the universe each day, which is why FINRA short volume (11A) and Form 4 insider activity (11B) are Phase 1 steps. v5 consolidates storage to 23 tables (two metric tables become views, four explanatory tables become JSONB on their parent rows, reason codes become a list in code) and adds a rule that the API reads only one read model, the `company_page` view. The pipeline is one daily batch that starts at 06:00 US Eastern, Monday to Friday, and is meant to finish by 07:00 (Step 16). It replaces the earlier two-stage design (a 16:30 market stage and a 23:30 filings stage), and the read model is refreshed as the batch's last step.
 
 ---
 
@@ -13,7 +13,7 @@ This document turns the 24 Phase 1 steps (0 to 20, plus 11A, 11B and 13A) into G
 - **Open items:** questions or data we still need, each with the **default assumption** the build will use if unanswered.
 - **Test plan:** a table of tests (`T<step>.<n>`) with level, data, and pass condition.
 
-Test levels: **Unit** (pure code, no database, no network), **Integration** (database, no network), **Contract** (recorded responses from external sources), **E2E** (whole stage or browser), **Manual**.
+Test levels: **Unit** (pure code, no database, no network), **Integration** (database, no network), **Contract** (recorded responses from external sources), **E2E** (whole batch or browser), **Manual**.
 
 ---
 
@@ -81,6 +81,13 @@ Feature: Cross-cutting engineering rules
     Given any stored timestamp
     Then it is timestamptz in UTC
     And market dates use the US Eastern trading date
+
+  Scenario: One daily batch
+    Given the batch starts at 06:00 US Eastern on weekdays (setting schedule.batch_start_et)
+    Then every source is collected, the universe is scored, the default screen is run and the
+         read model is refreshed in that one run
+    And the data describes the last completed US trading day
+    And the people using the tool see one consistent day until the next batch finishes
 
   Scenario: Universe-wide daily coverage
     Given the 55 fields of the company page (Appendix B)
@@ -466,7 +473,7 @@ Feature: Milestone and Composite
 | Item | Default |
 |---|---|
 | Real `eps_this` values | Resolved: Finviz returns a percent string (for example `10.95%`); the parser stores the number, a blank is stored as null, and the EPS bands (>50, >20, >0) apply. Spot-checked against 15 real values, all matching the stored Milestone. Ingestion always reads the column |
-| `now` definition | The Stage A timestamp (16:30 ET) |
+| `now` definition | The batch's scheduled scoring time: 06:00 US Eastern on the run's day (a setting), not the wall-clock time, so a re-run later the same day gives identical scores |
 | Stale earnings dates score 10 | Parity quirk, switchable in Step 4 |
 
 **Test plan**
@@ -608,7 +615,7 @@ Feature: Phase 1 data model
 |---|---|
 | One schema with app-prefixed tables (versus several schemas) | One schema; a separate restricted schema only when positions arrive |
 | Array columns versus child tables for reason codes | PostgreSQL arrays; codes themselves are a list in code |
-| `company_page` as a view or a materialised table | View first; materialise only if slow or if vintage logic gets awkward (O25) |
+| `company_page` as a view or a materialised table | **Materialised, refreshed as the last step of the daily batch (O25).** It is a plain view today; Step 16 turns it into a PostgreSQL materialised view, with a unique index so it can be refreshed without blocking readers. The metric views are then evaluated once per batch, not on every request |
 | Per-field reasons on `company_page` | `field_meta` carries as-of dates, ages and reason codes per source group; per-field reasons are filled in as the collectors (Steps 10 to 14) populate each field |
 | "Stale" for short volume | More than 5 weekdays since the latest trading day with data; market holidays are not modelled |
 | Amendments of Form 4 filings | A nullable `amends_accession` column on `sec_form4_filing` links a 4/A to the filing it replaces; the insider view drops the original only when the amendment parsed |
@@ -740,7 +747,7 @@ Feature: Scoring a day from stored data
 |---|---|
 | Keep superseded runs forever | Yes, with optional pruning of non-candidate JSON after a retention window |
 | Which runway and catalyst rows a run uses | The latest rows dated on or before the day, with no staleness check; Step 15 adds the fresh, carried-forward and expired resolution and fills `carried_inputs` |
-| The scorer's "now" | 16:30 US Eastern on the run's day (20:30 UTC in October), unless a run is given another time |
+| The scorer's "now" | Built as 16:30 US Eastern on the run's day (20:30 UTC in October), matching the golden day. **Changes with the 06:00 batch:** the scheduled batch time, 06:00 US Eastern on the run's day (a setting). The golden-day tests keep passing 16:30 explicitly. To change in Step 16 |
 | Run statuses | `running`, `complete`, `superseded` (a later complete run for the same day exists) and `failed` (with `error_text`); readers use the latest `complete` run |
 
 **Test plan**
@@ -920,7 +927,7 @@ Feature: Daily Finviz snapshot
   Scenario: Download and store
     Given a valid Finviz Elite token
     And the export URL uses view 151 and the filter f=sec_healthcare, both read from settings
-    When the market stage runs
+    When the daily batch runs
     Then the CSV is downloaded, stored unchanged in object storage with its hash,
          and a source_call row records the result and the filter used
 
@@ -972,7 +979,8 @@ Feature: Daily Finviz snapshot
 
   Scenario: Download failure
     Given the download fails after three attempts
-    Then the stage stops, the failure is recorded, and an alert is raised
+    Then the download step fails, the failure is recorded, and an alert is raised
+    And the batch skips scoring and carries on collecting the other sources (Step 16)
 ```
 
 **Acceptance criteria**
@@ -980,7 +988,7 @@ Feature: Daily Finviz snapshot
 - A10.2 `-` and blanks become NULL, never zero.
 - A10.3 A blank column across the universe fails a check (the `eps_this` case).
 - A10.4 Identical re-downloads are idempotent.
-- A10.5 Failure stops Stage A and alerts.
+- A10.5 A failed download fails the batch's Finviz step, skips scoring and alerts.
 - A10.6 The token is read from a secret and never logged.
 - A10.7 All 50 columns are stored for every row; the duplicate headers are resolved by position. Of the repeated headers, the occurrence whose values carry percent signs is used for percent columns, and the others are kept under `extras`. Proven on synthetic files; to be proven on the real file.
 
@@ -991,8 +999,8 @@ Feature: Daily Finviz snapshot
 | The column map (header texts per field, 50 columns) | Written from the data model's field list and Finviz's usual header texts, with aliases. **Unverified** against the reference workbook's "Finviz Column Map" sheet (F10) and a real file; a required header that is missing stops the load, any other missing header fails the blank-column check |
 | The `c=` column parameter of the export URL | Setting `finviz.columns`, empty by default, which uses the columns of the account's saved view 151. Set it to the 50 column ids to make the request self-contained |
 | Units of cells without a K, M, B or T suffix | Taken as already in the stored unit (market cap and shares in millions, average volume in thousands); a suffix is scaled. Confirm on the first real file |
-| Alerts | A stopped stage or a failed check is stored (a failed `data_quality_check`, a failed `source_call`) and logged as an error. Sending the email is Step 17 |
-| A failed data-quality check | The load stands and the run is marked `partial`; the download and format failures stop the stage. Step 16 decides what a partial market stage means for scoring |
+| Alerts | A failed step or a failed check is stored (a failed `data_quality_check`, a failed `source_call`) and logged as an error. Sending the email is Step 17 |
+| A failed data-quality check | The load stands and the run is marked `partial`; the download and format failures fail the step. Step 16 decides: a failed row-count check or a blank column among the scoring inputs stops scoring; any other failed check lets scoring proceed with the run marked `partial` |
 | Row-count comparison | Against the latest earlier day that has snapshots (which can be the fixture day), more than the `finviz.row_count_change_alert_pct` setting (20) fails |
 | Industry changes | The company's industry is updated and the change is stored in the `industry_changes` check detail; there is no history table, but every day's snapshot keeps its `industry_raw` |
 | Raw file storage | Local disk under `RAW_STORAGE_DIR` (default `backend/var/raw`, git-ignored), keyed by day and content hash; an object store replaces it later behind the same interface |
@@ -1008,7 +1016,7 @@ Feature: Daily Finviz snapshot
 | T10.3 | Integration | Blank column check | F6 with a column blanked | Check fails, alert queued |
 | T10.4 | Integration | Row count anomaly | synthetic | Fails at 21 percent change |
 | T10.5 | Integration | Same file twice | F6 | No duplicate rows |
-| T10.6 | Integration | Forced HTTP failure | mocked | Three attempts, stage stops |
+| T10.6 | Integration | Forced HTTP failure | mocked | Three attempts, step fails, scoring skipped |
 | T10.7 | Unit | Log scan | CI | Token never appears |
 | T10.8 | Contract | All 50 columns stored | F6 | 50 of 50 columns present for every row |
 | T10.9 | Unit | Duplicate headers | synthetic header row | Values land in the correct positional columns |
@@ -1095,14 +1103,14 @@ Feature: SEC EDGAR collection
 
 ## Step 11A: FINRA short-volume collector and metrics
 
-**Depends on:** Step 5. **Size:** S. Part of the universe-wide daily batch (Stage B).
+**Depends on:** Step 5. **Size:** S. Part of the universe-wide daily batch.
 
 ```gherkin
 Feature: FINRA Reg SHO daily short volume
 
   Scenario: Daily file
     Given the FINRA consolidated short-volume file for a trading date
-    When the filings stage runs
+    When the daily batch runs
     Then the file is downloaded once, stored unchanged in object storage with its hash,
          and a source_call row records the result
 
@@ -1167,7 +1175,7 @@ Feature: FINRA Reg SHO daily short volume
 **Open items**
 | Item | Default |
 |---|---|
-| When FINRA publishes each day's file | Fetch in Stage B (23:30 ET); a missing file is retried on the next run |
+| When FINRA publishes each day's file | Fetched in the 06:00 batch, when the previous trading day's file is expected to exist (to confirm on the first real run); a missing file is retried on the next batch |
 | Ticker format differences between FINRA and Finviz (share classes, punctuation) | Normalise both sides; unmatched tickers get `not_in_finra_file` |
 | Maximum carry-forward age | 5 trading days |
 | Whether to store the short-exempt volume | Stored, not displayed |
@@ -1189,7 +1197,7 @@ Feature: FINRA Reg SHO daily short volume
 
 ## Step 11B: Form 4 insider-activity collector and metrics
 
-**Depends on:** Steps 5 and 11 (SEC client, shared rate limiter, submissions). **Size:** L. Part of the universe-wide daily batch (Stage B).
+**Depends on:** Steps 5 and 11 (SEC client, shared rate limiter, submissions). **Size:** L. Part of the universe-wide daily batch.
 
 ```gherkin
 Feature: SEC Form 4 insider activity
@@ -1670,43 +1678,89 @@ Feature: Choosing the inputs the scorer sees
 **Depends on:** Steps 10 to 15, 11A and 11B. **Size:** L.
 
 ```gherkin
-Feature: Daily pipeline
+Feature: The daily batch
 
-  Scenario: Market stage
-    When "run_stage market" executes
-    Then it downloads Finviz, parses, runs quality checks, resolves inputs, scores,
-         applies the default screen and writes funnel events, in that order
+  Background:
+    Given the batch is started by a timer at 06:00 US Eastern, Monday to Friday
+          (setting schedule.batch_start_et)
+    And it is meant to be finished by 07:00
 
-  Scenario: Filings stage
-    When "run_stage filings" executes
-    Then it resolves CIKs, checks submissions for filings and Form 4, refreshes facts where needed,
-         fetches and parses new Form 4 documents, fetches new FINRA short-volume files,
-         queries trials, computes runway, insider and short-volume metrics, and derives catalyst signals
+  Scenario: One batch, ordered steps
+    When "run_batch" executes
+    Then it runs these steps in order, each recorded on the pipeline run:
+         1 download Finviz, parse, store and run the quality checks
+         2 resolve CIKs
+         3 check SEC submissions for filings and Form 4
+         4 refresh company facts where needed
+         5 fetch and parse new Form 4 documents
+         6 fetch new FINRA short-volume files
+         7 query ClinicalTrials.gov
+         8 compute runway, insider and short-volume metrics and derive catalyst signals
+         9 resolve the effective inputs
+         10 score the universe
+         11 run the default screen and write funnel events
+         12 refresh the read model
 
-  Scenario: No overlap
-    Given a stage is running
-    Then a second start of the same stage exits without work
+  Scenario: The day the data describes
+    Then the run's market date is the last completed US trading day before the run date
+    And the Finviz snapshot, the score run and the screen are stored under that market date
+
+  Scenario: Scored at the scheduled time
+    Then the scorer's "now" is the scheduled start (06:00 US Eastern on the run date),
+         not the wall-clock time
+    And re-running the batch later the same day gives identical scores
+
+  Scenario: Weekends and market holidays
+    Given there is no timer on Saturday or Sunday
+    And the market was closed on the previous weekday
+    Then the batch still collects filings, trials, insider and short-volume data
+    But it records "no new market day", skips scoring, the screen and the read-model refresh,
+         and sends no alert
+    And the next trading day's batch catches up on everything published meanwhile
+
+  Scenario: Read model is refreshed last and only after a good score run
+    Given the score run completed
+    Then the read model is refreshed as the final step, in one atomic refresh
+    And readers see either the previous day's complete page or the new one, never a mix
+    But given scoring was skipped or failed
+    Then the read model keeps the previous day's page, which shows its age
+
+  Scenario: Finviz failure
+    Given the Finviz download fails after its retries
+    Then the batch continues collecting filings, trials, insider and short volume
+    And it skips scoring, the screen and the read-model refresh
+    And the run is marked failed and an alert is sent
+
+  Scenario: Quality checks decide whether scoring runs
+    Given the Finviz load completed with a failed data-quality check
+    Then a failed row-count check, or a blank column among the scoring inputs, stops scoring
+    And any other failed check lets scoring proceed with the run marked partial
 
   Scenario: Failure isolation
     Given the SEC feed is down
-    Then the filings stage continues with trials and records the SEC failures
-    And the market stage still scores using carried-forward inputs
+    Then the batch continues with trials and FINRA and records the SEC failures
+    And scoring still runs using carried-forward inputs
 
   Scenario: Insider and short-volume failures never block scoring
     Given the FINRA download or Form 4 collection fails
-    Then the filings stage continues and records the failure
-    And the market stage scores normally
-  Scenario: Finviz failure
-    Given the Finviz download fails
-    Then the market stage stops and alerts
+    Then the batch continues and records the failure
+    And scoring runs normally
+
+  Scenario: No overlap
+    Given a batch is running
+    Then a second start exits without work
 
   Scenario: Resumable and idempotent
-    Given a stage failed at a step
+    Given a batch failed at a step
     When it is re-run for the same date
-    Then completed steps are not duplicated and the stage resumes
+    Then completed steps are not duplicated and the batch resumes at the failed step
+
+  Scenario: Ready by 07:00
+    Given the batch is still running at 07:00
+    Then an alert is sent once, naming the step it is on
 
   Scenario: Dry run
-    When a stage runs in dry-run mode against recorded fixtures
+    When the batch runs in dry-run mode against recorded fixtures
     Then no external call is made and the full flow completes
 
   Scenario: Run record
@@ -1714,28 +1768,43 @@ Feature: Daily pipeline
 ```
 
 **Acceptance criteria**
-- A16.1 Both stages complete against fixtures in dry-run mode.
+- A16.1 The batch completes against fixtures in dry-run mode.
 - A16.2 Injected failures follow the rules above.
 - A16.3 Re-running a day produces no duplicates.
 - A16.4 A lock prevents overlapping runs.
-- A16.5 The filings stage finishes within its time budget for 1,053 companies, including Form 4 and FINRA.
+- A16.5 The batch finishes within its time budget for 1,053 companies, including Form 4 and FINRA.
 - A16.6 Insider and short-volume failures never block scoring.
+- A16.7 The read model is refreshed only as the last step, and only after a completed score run.
+- A16.8 A re-run on the same day reproduces the first run's scores exactly.
+- A16.9 On a day with no new market date, no score run is created and no alert is sent.
+- A16.10 A batch that is still running at 07:00 raises one alert.
 
 **Open items**
 | Item | Default |
 |---|---|
-| Schedule times | Market about 16:30 ET, filings about 23:30 ET |
-| Market stage on market holidays | Skipped |
-| Time budget for the filings stage | 3 hours, to confirm after measuring |
+| Start time | 06:00 US Eastern, Monday to Friday; the finish target is 07:00 |
+| Time budget | 60 minutes for a normal day, to confirm after measuring. The first run and any backfill (45 days of FINRA, 90 days of Form 4) are exempt |
+| How the batch knows the market was closed | A market-holiday list in settings (default: the NYSE calendar, kept up to date by the engineer). Without it the batch compares the market date with the latest scored one |
+| What Finviz returns at 06:00 | Assumed to be the previous close, so the same prices as the old system's 16:30 snapshot. To verify with the first real download (Step 10) |
+| Finviz fails | Collect the other sources, skip scoring, alert, and leave yesterday's page up with its age |
+| Weekend runs | None; Monday's batch catches up. Sources are fetched incrementally, so nothing is lost |
+| Which Finviz columns count as scoring inputs for the blank-column rule | All the inputs of the scores (quick ratio, cash per share, price, debt to equity, P/Cash, `eps_next`, relative volume, earnings date, market cap and the seven peer dimensions). `eps_this` is included once real data has it |
+| Refresh method for the read model | A PostgreSQL materialised view refreshed concurrently, or a table rebuilt in one transaction; the choice is the engineer's |
 
 **Test plan**
 | ID | Level | Test | Pass condition |
 |---|---|---|---|
-| T16.1 | E2E | Dry-run both stages | Complete, correct row counts |
-| T16.2 | E2E | Fault injection per source | Behaviour as scenarios |
-| T16.3 | Integration | Re-run after mid-stage failure | Resumes, no duplicates |
+| T16.1 | E2E | Dry-run the whole batch | Complete, correct row counts |
+| T16.2 | E2E | Fault injection per source, including Finviz | Behaviour as scenarios |
+| T16.3 | Integration | Re-run after a mid-batch failure | Resumes, no duplicates |
 | T16.4 | Integration | Concurrent start | Second exits |
 | T16.5 | Manual | Timed run in staging | Within budget |
+| T16.6 | Integration | A day with no new market date | No score run, no alert, other sources collected |
+| T16.7 | Integration | Run twice on the same day | Identical scores |
+| T16.8 | Integration | Score failure | Read model unchanged |
+| T16.9 | Unit | The scorer's "now" is the scheduled time | 06:00 US Eastern, including across daylight saving |
+| T16.10 | Integration | Batch still running at 07:00 | One alert naming the step |
+| T16.11 | Integration | A failed row-count check, and a blank scoring column | Scoring stops; other failed checks proceed as partial |
 
 ---
 
@@ -1747,7 +1816,7 @@ Feature: Daily pipeline
 Feature: Pipeline health
 
   Scenario: Health page
-    Then it shows the last run per stage, last success per source, quality-check results,
+    Then it shows the last batch run with its steps, last success per source, quality-check results,
          counts of carried and null inputs, and run history
 
   Scenario Outline: Alerts
@@ -1755,8 +1824,9 @@ Feature: Pipeline health
     Then an email is sent once
     Examples:
       | condition |
-      | the market stage fails |
-      | a source fails on two consecutive nights |
+      | the daily batch fails |
+      | the daily batch is still running at 07:00 |
+      | a source fails on two consecutive batch days |
       | a column is blank across the whole universe |
       | the Finviz row count changes by more than 20 percent |
       | Form 4 parse failures exceed the configured threshold for a run |
@@ -1898,6 +1968,7 @@ Feature: Company page
 | Average volume is stored in thousands; displayed with a K suffix | Confirm |
 | PDF export of the page | Later |
 | Fair value tiles | Placeholders until the valuation phase |
+| Stale-banner age counted in calendar days | With a Monday to Friday batch, a long weekend or a market holiday shows a false "stale" banner (a Monday after a Friday holiday is 4 days from the market date). Default: count weekdays and market holidays out, so age is in trading days. Same change for the Step 9 banner, which is built on calendar days today |
 
 **Test plan**
 | ID | Level | Test | Data | Pass condition |
@@ -1923,8 +1994,9 @@ Feature: Production operations
     When the deploy workflow runs
     Then the application, database, reverse proxy and timers are running on the server over HTTPS
 
-  Scenario: Scheduled stages
-    Then the market and filings stages are started by timers at the configured times
+  Scenario: Scheduled batch
+    Then the daily batch is started by a timer at 06:00 US Eastern, Monday to Friday
+    And the start time and the market-holiday list are settings
 
   Scenario: Backups
     Then a nightly database dump is written to object storage and kept for 30 days
@@ -1944,7 +2016,7 @@ Feature: Production operations
 **Acceptance criteria**
 - A19.1 A deploy from CI succeeds on a clean server.
 - A19.2 A restore drill succeeds and is documented.
-- A19.3 Timers run both stages in staging for three consecutive days.
+- A19.3 The timer runs the batch in staging on three consecutive trading days.
 - A19.4 Secrets live outside the repository.
 
 **Open items**
@@ -2005,6 +2077,7 @@ Feature: Acceptance against the current system
 | How daily current-system outputs are obtained (the analyst has no direct access) | A daily export from the person with access |
 | Tolerance | 0.05 on scores |
 | What counts as an explained difference | The four classes above |
+| The old system snapshots at 16:30 and the new batch at 06:00 | Prices and market data should match, because 16:30 is after the close and 06:00 the next morning still shows that close. Expected differences are the time-based terms (days to earnings and catalysts shift by about 13.5 hours and can cross a band) and sources updated overnight. These fall under the "source data timing" class |
 
 **Test plan**
 | ID | Level | Test | Pass condition |
@@ -2034,7 +2107,7 @@ Feature: Acceptance against the current system
 | O12 | Daily outputs from the current system for the parallel run | Step 20 | Export from its owner | Product owner |
 | O13 | Whether the first production version keeps all parity quirks | Step 4, 20 | Keep, with carry-forward on | Product owner |
 | O14 | Fixture files and licensing (kept out of the repository) | Step 6 | Private storage | Engineer |
-| O15 | When FINRA publishes each day's file | Step 11A | Fetch in Stage B; retry next run | Engineer |
+| O15 | When FINRA publishes each day's file | Step 11A | Fetched in the 06:00 batch; a missing file is retried on the next batch | Engineer |
 | O16 | Ticker format differences between FINRA and Finviz | Step 11A | Normalise both sides | Engineer |
 | O17 | Form 4 rules: amendments, derivative transactions, issuer filter, 10b5-1 checkbox history | Step 11B | Amendment replaces original; non-derivative only; issuer filings; earlier filings count as not 10b5-1 | Product owner and engineer |
 | O18 | Form 4 volume and first-run backfill time | Step 11B, 16 | Measure on first run | Engineer |
@@ -2044,7 +2117,11 @@ Feature: Acceptance against the current system
 | O22 | Market cap rounding ($308M) versus the ABEO report ($307.94M) | Step 18 | Page rule wins | Product owner |
 | O23 | Display of a capped runway | Steps 12, 18 | "360+ months" | Product owner |
 | O24 | "Phase 2/3" in next-milestone ordering; indications de-duplication parity | Step 13A | Phase 3; no de-duplication | Product owner |
-| O25 | `company_page` as a view or a materialised table | Steps 5, 9, 18 | View first; materialise if slow | Engineer |
+| O25 | `company_page` as a view or a materialised table | Steps 5, 9, 16, 18 | Materialised, refreshed as the last batch step (decided with the 06:00 batch); today it is a plain view | Engineer |
+| O27 | Batch start and finish: start 06:00 US Eastern Monday to Friday, ready by 07:00 | Steps 16, 19 | 06:00 start, 07:00 alert | Product owner |
+| O28 | What Finviz returns at 06:00 (assumed the previous close) | Steps 10, 16 | Verify with the first real download | Engineer |
+| O29 | How the batch knows the market was closed | Step 16 | Market-holiday list in settings | Engineer |
+| O30 | Stale banner measured in trading days instead of calendar days | Steps 9, 18 | Trading days | Product owner |
 | O26 | Carry-forward through the metric views (age from the latest source row) instead of stored carried flags | Steps 11A, 11B, 15 | View semantics as written | Engineer |
 
 ## Step dependency summary
