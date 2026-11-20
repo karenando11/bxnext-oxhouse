@@ -1,8 +1,24 @@
-# OxHouse Research: Architecture and Data Model (v5, Phase 1 focus)
+# OxHouse Research: Architecture and Data Model (v6, Phase 1 focus)
 
 Status: proposal, subject to change in later phases. Nothing here has been implemented, and nothing has been written to the repository.
 
 Goal of this document: give a senior Django engineer enough structure to build **Phase 1 (the screener)** now, while keeping the model flexible enough that the later phases (evidence and claims, AI desk reads, verdict, valuation, positions) attach to it without reworking what Phase 1 builds.
+
+---
+
+## What changed in v6
+
+v6 replaces the two scheduled stages with **one daily batch**. Fields, sources and tables are unchanged.
+
+| Change | Effect |
+|---|---|
+| One batch at 06:00 US Eastern, Monday to Friday, ready by 07:00 | Replaces Stage A (about 16:30 ET) and Stage B (about 23:30 ET). Every source is collected, the universe is scored, the default screen runs and the read model is refreshed in one run, so every page shows one consistent day |
+| The data describes the last completed US trading day | At 06:00 Finviz still shows the previous close, which is the same close the old system snapshots at 16:30 |
+| The scorer's "now" is the scheduled start (06:00 ET), not the wall-clock time | A re-run on the same day reproduces the scores exactly |
+| `company_page` becomes a materialised view refreshed as the last batch step | Readers see yesterday's complete page or today's, never a mix. Until Step 16 it is a plain view in the code |
+| Finviz failure no longer stops the whole run | The other sources are still collected; scoring, the screen and the refresh are skipped; yesterday's page stays up with its age |
+| Market-closed days | The batch records "no new market day" and skips scoring; the next trading day catches up |
+| One timer, one lock, one alert path | Replaces two timers |
 
 ---
 
@@ -17,7 +33,7 @@ pipeline behaviour changes; the same 55 page fields are collected for every comp
 | Explanatory detail moves into JSONB on its parent row | `pipeline_step` (as `pipeline_run.steps`), `runway_trial_burn_line` (as `runway_calc.trial_burn_lines`), `catalyst_candidate` (as `catalyst_signal.candidates`), `peer_group_stat` (as `score_run.peer_group_stats`) |
 | Reason codes become code, not a table | A fixed list in the code base (Django choices) and the section 4.9 list; the database stores the code text |
 | Two metric tables become database views | `short_volume_metric` and `insider_metric_daily` are computed from `short_volume_daily` and `sec_form4_transaction`; carry-forward becomes automatic because the view always uses the latest source rows and reports their age |
-| Read-model rule | The API reads only from one read model, the `company_page` view (section 4.11); it never joins base tables per request |
+| Read-model rule | The API reads only from one read model, `company_page` (section 4.11); it never joins base tables per request |
 
 The Phase 1 list in section 4 is the v5 list. Everything below the table list that still says v4 describes unchanged behaviour.
 
@@ -34,9 +50,9 @@ from the previous version of the spreadsheet; what changed is where the work hap
 | FINRA short volume and SEC Form 4 insider activity move from Phase 2 into the universe-wide daily batch | 9 of the 55 fields (3 short-volume, 6 insider) are now Phase 1, for all companies |
 | Two collection tiers are defined | **Tier 1:** the universe-wide daily batch (this document). **Tier 2:** deep collection for about 80 companies, from different sources, in later phases |
 | New tables and views | Tables `short_volume_daily`, `sec_form4_filing`, `sec_form4_transaction`; views `short_volume_metric` and `insider_metric_daily` (v5) |
-| New pipeline steps in Stage B | Fetch FINRA files, discover and parse new Form 4 filings, compute the two metric tables |
+| New pipeline steps in the daily batch | Fetch FINRA files, discover and parse new Form 4 filings, compute the two metric tables |
 | One shared SEC rate limiter | Submissions, company facts and Form 4 XML all draw on the same 10-requests-per-second allowance |
-| Field lineage appendix | Appendix A maps all 55 page fields to their source, collector, table and stage |
+| Field lineage appendix | Appendix A maps all 55 page fields to their source, collector and table |
 | Phase 2 redefined | Deep collection for about 80 companies using other sources; no longer includes FINRA or Form 4 |
 
 No existing table changes. No new Django app is needed: short volume lives in `marketdata` and
@@ -216,42 +232,49 @@ Notes:
 
 ### 2.3 Daily pipeline
 
-Two scheduled stages, matching how the current system behaves. Both are idempotent and safe to re-run.
+One batch, started by a timer at 06:00 US Eastern, Monday to Friday, and meant to be finished by 07:00. It is idempotent and safe to re-run.
 
 ```mermaid
 flowchart TD
-    subgraph STAGEB[Stage B: filings, trials, insider and short-volume refresh - about 23:30 ET nightly]
-        B1[Resolve ticker to CIK<br/>company_tickers.json] --> B2[Check SEC submissions<br/>for new 10-K 10-Q 20-F 6-K and Form 4]
-        B2 --> B3[Refresh companyfacts only for<br/>companies with a new filing or no data]
-        B3 --> B4[Query ClinicalTrials.gov<br/>per sponsor alias]
-        B4 --> B5[Compute runway_calc<br/>cash, operating burn, trial burn]
-        B5 --> B6[Derive catalyst_signal<br/>with its candidates]
-        B2 --> B7[Fetch and parse only new Form 4 XML<br/>store filings and transactions]
-        B7 --> B8[Form 4 rows feed the insider_metric_daily view<br/>90-day counts]
-        B9[Fetch new FINRA short-volume files<br/>45-day lookback on first run] --> B10[Daily rows feed the short_volume_metric view<br/>latest ratio, trend, delta]
-    end
+    subgraph BATCH[Daily batch: starts 06:00 ET Monday to Friday, ready by 07:00]
+        S1[Download Finviz CSV<br/>store raw file and hash] --> S2[Parse to finviz_snapshot<br/>blank becomes NULL]
+        S2 --> S3[Data quality checks<br/>column completeness, row count]
 
-    subgraph STAGEA[Stage A: market snapshot and scoring - about 16:30 ET on trading days]
-        A1[Download Finviz CSV<br/>store raw file and hash] --> A2[Parse to finviz_snapshot<br/>blank becomes NULL]
-        A2 --> A3[Data quality checks<br/>column completeness, row count]
-        A3 --> A4[Resolve effective inputs<br/>latest good runway and catalyst<br/>within max age, else null]
-        A4 --> A5[Score universe<br/>peer groups, topology,<br/>cash health, milestone, composite]
-        A5 --> A6[Write score_run and score_result]
-        A6 --> A7[Apply default screen<br/>write screen_run, screen_member, funnel_event]
-    end
+        C1[Resolve ticker to CIK<br/>company_tickers.json] --> C2[Check SEC submissions<br/>for new 10-K 10-Q 20-F 6-K and Form 4]
+        C2 --> C3[Refresh companyfacts only for<br/>companies with a new filing or no data]
+        C2 --> C4[Fetch and parse only new Form 4 XML<br/>store filings and transactions]
+        C5[Fetch new FINRA short-volume files<br/>45-day lookback on first run]
+        C6[Query ClinicalTrials.gov<br/>per sponsor alias]
+        C3 --> C7[Compute runway_calc<br/>cash, operating burn, trial burn]
+        C6 --> C8[Derive catalyst_signal<br/>with its candidates]
+        C4 --> C9[Form 4 rows feed the insider_metric_daily view]
+        C5 --> C10[Daily rows feed the short_volume_metric view]
 
-    B6 -.->|read at next Stage A| A4
+        S3 --> G{Finviz loaded and<br/>checks allow scoring?}
+        C7 --> G
+        C8 --> G
+        G -- yes --> R1[Resolve effective inputs<br/>latest good runway and catalyst<br/>within max age, else null]
+        R1 --> R2[Score universe<br/>peer groups, topology,<br/>cash health, milestone, composite]
+        R2 --> R3[Write score_run and score_result]
+        R3 --> R4[Apply default screen<br/>write screen_run, screen_member, funnel_event]
+        R4 --> R5[Refresh company_page<br/>last step, atomic]
+        G -- no --> K[Skip scoring, screen and refresh<br/>yesterday's page stays up with its age]
+    end
 ```
 
-Rules for both stages:
+Rules for the batch:
 - Every external request writes a `source_call` row (status, attempts, bytes, content hash, storage path).
 - Retries: up to three attempts with exponential backoff. SEC is throttled to about 110 ms between requests; ClinicalTrials.gov gets a polite delay.
 - A failure never aborts the whole run. It marks that call failed and moves on, then the carry-forward rule decides what the scorer sees.
-- The Finviz download is the one hard dependency. If it fails after retries, Stage A stops and alerts, because scoring needs the whole universe for peer statistics.
-- Stage B runs every calendar day. Stage A runs on trading days (a holiday run is harmless but wasteful).
+- **The day the data describes.** The market date is the last completed US trading day before the run date. At 06:00 Finviz still shows the previous close, the same close the old system snapshots at 16:30 (to verify with the first real download).
+- **Scored at the scheduled time.** The scorer's "now" is the scheduled start (06:00 ET on the run date), not the wall-clock time, so a re-run later the same day gives identical scores.
+- **Finviz is the hard dependency for scoring, not for collection.** If the download fails after retries, or the row-count check fails, or a scoring-input column is blank across the universe, the batch still collects the other sources but skips scoring, the screen and the read-model refresh, marks the run failed or partial, and alerts. Other failed quality checks let scoring proceed with the run marked partial.
+- **Weekends and market holidays.** There is no timer on Saturday or Sunday. On a weekday after a closed market the batch collects filings, trials, insider and short-volume data, records "no new market day", skips scoring and sends no alert. The next trading day catches up, because every source is fetched incrementally.
+- **The read model is refreshed last.** `company_page` is refreshed in one atomic step, only after a completed score run, so readers see the previous day's page or the new one, never a mix.
+- **Ready by 07:00.** If the batch is still running at 07:00 an alert is sent once, naming the step it is on. The first run and any backfill are exempt from the time budget.
 - **One SEC rate limiter.** Submissions, company facts and Form 4 XML requests all share a single limiter (at least 110 ms between any two SEC requests), because SEC's allowance applies to the host, not to each endpoint.
-- **Incremental by default.** Nightly SEC traffic is one submissions check per company, plus only the company-facts files with a new filing and only the Form 4 documents not yet stored. FINRA adds one file per trading day. The first run backfills 90 days of Form 4 filings and 45 days of FINRA files.
-- **Order inside Stage B.** FINRA files and Form 4 documents are fetched after SEC submissions; the metric tables are computed last. None of the insider or short-volume values feed the scores, so a failure there never blocks scoring.
+- **Incremental by default.** Daily SEC traffic is one submissions check per company, plus only the company-facts files with a new filing and only the Form 4 documents not yet stored. FINRA adds one file per trading day. The first run backfills 90 days of Form 4 filings and 45 days of FINRA files.
+- **Order of the collection steps.** FINRA files and Form 4 documents are fetched after SEC submissions; the metric views read them last. None of the insider or short-volume values feed the scores, so a failure there never blocks scoring.
 
 ### 2.4 Failure and carry-forward rule
 
@@ -276,7 +299,7 @@ flowchart LR
         CADDY[Caddy<br/>HTTPS and basic protection]
         DJ[Django app container<br/>gunicorn]
         PG[(PostgreSQL container<br/>or managed small instance)]
-        TMR[Two timers<br/>cron or systemd<br/>run management commands]
+        TMR[One timer<br/>cron or systemd<br/>runs the batch command]
     end
     R2[(Object storage<br/>Cloudflare R2 or Backblaze B2<br/>raw files and nightly pg_dump)]
     GH[GitHub Actions<br/>tests and deploy]
@@ -308,7 +331,7 @@ Indicative cost: roughly $5 to $25 a month for the VPS plus pennies for object s
 | Companies | Every company in the pre-screen universe (about 1,053) | About 80 (the screened set) plus a buffer |
 | Fields | All 55 company-page fields | Everything the research layer needs: filing text, press releases, advisory and KOL data, claims |
 | Sources | Finviz, SEC (facts, submissions, Form 4), ClinicalTrials.gov, FINRA | Different sources, chosen per data point in later phases |
-| Cadence | Daily, two stages | Per source, driven by events (new filing, new release) |
+| Cadence | Daily, one batch at 06:00 ET | Per source, driven by events (new filing, new release) |
 | Phase | 1 | 2 onward |
 
 Tier 1 gives every company in the universe the same page, so a user can open any ticker, and the
@@ -344,7 +367,7 @@ company drifts across the line), and anything a user pins. A small `coverage_mem
 
 | Table | Key columns | Notes |
 |---|---|---|
-| `pipeline_run` | id, stage (`market` or `filings`), as_of_date, trigger (`schedule`, `manual`), started_at, finished_at, status, code_ref, steps (jsonb) | One row per stage execution. `steps` is a list of {step_name, started_at, finished_at, status, rows_in, rows_out, error_text} |
+| `pipeline_run` | id, stage (`batch`; the code still lists `market` and `filings` from the two-stage design, to be changed in Step 16), as_of_date (the market date), trigger (`schedule`, `manual`), started_at, finished_at, status, code_ref, steps (jsonb) | One row per stage execution. `steps` is a list of {step_name, started_at, finished_at, status, rows_in, rows_out, error_text} |
 | `source_call` | id, run_id, feed (`finviz_elite`, `sec_tickers`, `sec_companyfacts`, `sec_submissions`, `ctgov_studies`, `finra_regsho`, `sec_form4`), scope_key (CIK, sponsor or date), requested_at, completed_at, http_status, status (`ok`, `partial`, `failed`, `skipped`), reason_code, attempts, bytes, content_hash, storage_uri, error_text | The replacement for the old system's dead error flag. Everything downstream links here. |
 | `data_quality_check` | run_id, check_name, scope (for example `finviz.eps_this`), expected, observed, status, detail | Column completeness, row count, duplicate tickers. Catches a column that goes blank across the whole universe. |
 | `setting` | key, value (jsonb), updated_by, updated_at | Default filters, max ages, schedule offsets |
@@ -489,10 +512,10 @@ This list lives in code (Django choices), not in a table.
 
 | Item | Detail |
 |---|---|
-| `company_page` (view) | One row per company for the latest completed day (and a function form for a past date). Columns: the 55 page fields as typed columns, plus `field_meta` (jsonb) giving, for each field, its source date, age in days and a reason code when the value is null or carried |
+| `company_page` (materialised view) | One row per company for the latest completed score run. Columns: the 55 page fields as typed columns, plus `field_meta` (jsonb) giving, for each field, its source date, age in days and a reason code when the value is null or carried |
 | Built from | Latest `finviz_snapshot`, `score_result`, `runway_calc`, `catalyst_signal`, `short_volume_metric`, `insider_metric_daily` and the company identity tables. The trial lists (next milestone, pipeline, indications, upcoming completions) are derived at read time from `ct_study_version` (Step 13A) and attached by the API layer |
-| Vintage | The view is the one place that chooses which source row counts as "latest" and records its date, so a page cannot silently mix days; Stage A and Stage B data carry their own dates in `field_meta` |
-| Start | A plain PostgreSQL view. Switch to a materialised table filled by the last pipeline step only if the view becomes slow or the vintage logic becomes awkward. The API does not change when that happens |
+| Vintage | The view is the one place that chooses which source row counts as "latest" and records its date, so a page cannot silently mix days; each source's data carries its own date in `field_meta` |
+| Refresh | Refreshed as the last step of the daily batch, after a completed score run (a PostgreSQL materialised view refreshed concurrently, or a table rebuilt in one transaction). Until Step 16 it is a plain view in the code; the API does not change when it is materialised. The metric views it reads are then evaluated once per batch |
 | Expected cost | A company page is one row; the screener list is 1,053 rows. Both are comfortably fast on a single small server |
 
 Counting: the 23 Phase 1 tables are the tables in sections 4.1 to 4.7. `short_volume_metric`, `insider_metric_daily` and `company_page` are views and are not counted.
@@ -836,7 +859,7 @@ All rules below were validated against the golden export for 2026-10-12 (1,053 r
 
 ### 6.1 General rules
 
-- Scoring runs once per Stage A pass with a single `scored_at`. Day counts are fractional.
+- Scoring runs once per batch with a single `scored_at`, the scheduled start (06:00 ET on the run date). Day counts are fractional.
 - Display rounding: round half up applied to the exact binary value (JavaScript `toFixed` behaviour). Stored values are unrounded. Recency is never rounded for display (0.75 stays 0.75).
 - `eps_this` and all optional inputs: a null input is skipped, never scored as zero.
 - Month conversion inside scoring bands: 30 days.
@@ -932,7 +955,7 @@ A 40 GB disk is comfortable for years. This is why a single small VPS is suffici
 - **Property tests** for rounding and clamps.
 - **Determinism check:** re-scoring the same stored inputs must produce identical rows.
 - **Health page:** last success per source, per-column completeness, count of carried and null inputs, run history.
-- **Alerts:** email on Stage A failure, on a source failing two nights running, or on a column going blank across the universe.
+- **Alerts:** email on a batch failure, on a batch still running at 07:00, on a source failing two batch days running, or on a column going blank across the universe.
 - **Tooling:** `pytest`, `ruff`, `uv`, GitHub Actions, Sentry, structured logging.
 
 ---
@@ -947,11 +970,11 @@ A 40 GB disk is comfortable for years. This is why a single small VPS is suffici
 6. **ClinicalTrials.gov collector and catalyst derivation:** `ct_study_version`, `catalyst_signal`, candidates.
 7. **FINRA short-volume collector and metrics:** daily files, `short_volume_daily`, `short_volume_metric` view.
 8. **Form 4 collector and metrics:** discovery from submissions, XML parsing, `insider_metric_daily` view, sharing the SEC rate limiter.
-9. **Pipeline orchestration:** two stages, retries, carry-forward, health page, alerts.
+9. **Pipeline orchestration:** the daily batch, retries, carry-forward, read-model refresh, health page, alerts.
 10. **Company page:** all blocks and vintage, TradingView widget.
 11. **Hardening:** backups, access protection, a two-week parallel run against the old system's output.
 
-**Definition of done:** the scores match the golden suite exactly in parity mode; a full Stage A and Stage B run unattended for two weeks; every one of the 55 page fields is populated or carries a reason for every company in the universe; backups restore.
+**Definition of done:** the scores match the golden suite exactly in parity mode; a full daily batch run unattended for two weeks; every one of the 55 page fields is populated or carries a reason for every company in the universe; backups restore.
 
 ---
 
@@ -970,7 +993,7 @@ A 40 GB disk is comfortable for years. This is why a single small VPS is suffici
 | 9 | History and retention | You | Keep everything; prune non-candidate `score_result` JSON after a window |
 | 10 | Alert channel | You | Email |
 | 11 | Hosting | You | One small VPS, Docker Compose |
-| 12 | When FINRA publishes each day's file (to place the fetch correctly in Stage B) | Engineer | Fetch in Stage B at 23:30 ET; a missing file is retried on the next run |
+| 12 | When FINRA publishes each day's file (to place the fetch correctly in the batch) | Engineer | Fetched in the 06:00 batch, when the previous trading day's file is expected to exist; a missing file is retried on the next batch |
 | 13 | FINRA symbol format versus Finviz tickers (share classes and punctuation) | Engineer | Normalise both sides; unmatched tickers get `not_in_finra_file` |
 | 14 | Form 4 details: whether 4/A amendments replace the original; whether derivative-table transactions count; which filings belong to an issuer; behaviour of the 10b5-1 checkbox on filings before it existed | You and engineer | Count only non-derivative transactions; an amendment replaces its original; filings before the checkbox existed count as not 10b5-1 |
 | 15 | Form 4 volume and first-run backfill time (90 days for about 1,053 companies) | Engineer | Measure on the first run |
@@ -986,7 +1009,7 @@ The v4 and v5 changes are listed at the top of this document.
 |---|---|
 | Single Django project with app-prefixed tables in one schema | A senior Django engineer, cost target, one small VPS. Restricted schema only when needed |
 | No Celery or Redis in Phase 1 | A daily batch of about 1,053 companies does not need a queue |
-| Two pipeline stages | Matches the current behaviour and the golden data |
+| One daily batch at 06:00 ET | One consistent vintage per day, one lock and one alert path. The old system's 16:30 snapshot is the same close, so prices match for the parallel run |
 | `source_call` replaces separate landing tables | One provenance record for every external call, with status and reason |
 | `score_result` stores `inputs` and `components` as JSON | Reproducibility and explainability with one row per company per day |
 | `catalyst_signal.candidates` | Explains every chosen date and feeds the Phase 3 calendar |
@@ -1001,64 +1024,63 @@ The v4 and v5 changes are listed at the top of this document.
 ## Appendix A: field lineage for the company page
 
 All 55 rows of the company-page field list, each collected for every company in the universe.
-Stage A is the market snapshot and scoring (about 16:30 ET); Stage B is the nightly filings, trials,
-insider and short-volume refresh (about 23:30 ET). Fields shown as derived at read time need no
-collection of their own.
+Every field is collected or computed in the daily batch (06:00 ET, Monday to Friday). Fields shown as
+derived at read time need no collection of their own.
 
 | # | Page field | Source | Stored in | Collected by |
 |---|---|---|---|---|
-| 1 | Ticker | URL path /company/:ticker | `ticker_history.ticker` (the URL carries it) | Finviz ingest, Stage A |
-| 2 | Company | Finviz Elite export | `finviz_snapshot.company_name_raw` and `company.name` | Finviz ingest, Stage A |
-| 3 | Market cap | Finviz Elite export | `finviz_snapshot.mcap_musd` | Finviz ingest, Stage A |
+| 1 | Ticker | URL path /company/:ticker | `ticker_history.ticker` (the URL carries it) | Finviz ingest, daily batch |
+| 2 | Company | Finviz Elite export | `finviz_snapshot.company_name_raw` and `company.name` | Finviz ingest, daily batch |
+| 3 | Market cap | Finviz Elite export | `finviz_snapshot.mcap_musd` | Finviz ingest, daily batch |
 | 4 | Price chart | TradingView embedded chart widget | Nothing stored (TradingView widget) | Browser, live |
-| 5 | Cash + Cat. Score | Computed in-house (from stored data) | `score_result.composite` | Scoring, Stage A |
-| 6 | Spring | Computed in-house (from stored data) | `score_result.divergence` | Scoring, Stage A |
-| 7 | Setup | Computed in-house (from stored data) | `score_result.cash_health` | Scoring, Stage A |
-| 8 | Timing | Computed in-house (from stored data) | `score_result.milestone` | Scoring, Stage A |
-| 9 | Outlier | Computed in-house (from stored data) | `score_result.outlier` | Scoring, Stage A |
-| 10 | Recency (feeds composite, not shown) | Computed in-house (from stored data) | `score_result.recency` | Scoring, Stage A |
-| 11 | Price | Finviz Elite export | `finviz_snapshot.price` | Finviz ingest, Stage A |
-| 12 | Market cap | Finviz Elite export | `finviz_snapshot.mcap_musd` | Finviz ingest, Stage A |
-| 13 | vs 52W high | Finviz Elite export | `finviz_snapshot.w52h` | Finviz ingest, Stage A |
-| 14 | vs 200D MA | Finviz Elite export | `finviz_snapshot.sma200` | Finviz ingest, Stage A |
-| 15 | Latest short ratio | FINRA Reg SHO daily short-volume files | `short_volume_metric.latest_ratio` (view) | FINRA collector, Stage B |
-| 16 | Trend | FINRA Reg SHO daily short-volume files | `short_volume_metric.trend` (view) | FINRA collector, Stage B |
-| 17 | Δ vs 30d baseline | FINRA Reg SHO daily short-volume files | `short_volume_metric.delta_pts` (view) | FINRA collector, Stage B |
-| 18 | RSI (14) | Finviz Elite export | `finviz_snapshot.rsi` | Finviz ingest, Stage A |
-| 19 | Avg vol | Finviz Elite export | `finviz_snapshot.avg_vol_k` | Finviz ingest, Stage A |
-| 20 | Rel vol | Finviz Elite export | `finviz_snapshot.rel_vol` | Finviz ingest, Stage A |
-| 21 | Week | Finviz Elite export | `finviz_snapshot.perf_w` | Finviz ingest, Stage A |
-| 22 | Month | Finviz Elite export | `finviz_snapshot.perf_m` | Finviz ingest, Stage A |
-| 23 | Quarter | Finviz Elite export | `finviz_snapshot.perf_q` | Finviz ingest, Stage A |
-| 24 | YTD | Finviz Elite export | `finviz_snapshot.perf_ytd` | Finviz ingest, Stage A |
-| 25 | Runway (quarters) | SEC EDGAR XBRL companyfacts | `runway_calc.runway_months` divided by 3, at read time | SEC collector and runway, Stage B |
-| 26 | Runway months | SEC EDGAR XBRL companyfacts | `runway_calc.runway_months` | SEC collector and runway, Stage B |
+| 5 | Cash + Cat. Score | Computed in-house (from stored data) | `score_result.composite` | Scoring, daily batch |
+| 6 | Spring | Computed in-house (from stored data) | `score_result.divergence` | Scoring, daily batch |
+| 7 | Setup | Computed in-house (from stored data) | `score_result.cash_health` | Scoring, daily batch |
+| 8 | Timing | Computed in-house (from stored data) | `score_result.milestone` | Scoring, daily batch |
+| 9 | Outlier | Computed in-house (from stored data) | `score_result.outlier` | Scoring, daily batch |
+| 10 | Recency (feeds composite, not shown) | Computed in-house (from stored data) | `score_result.recency` | Scoring, daily batch |
+| 11 | Price | Finviz Elite export | `finviz_snapshot.price` | Finviz ingest, daily batch |
+| 12 | Market cap | Finviz Elite export | `finviz_snapshot.mcap_musd` | Finviz ingest, daily batch |
+| 13 | vs 52W high | Finviz Elite export | `finviz_snapshot.w52h` | Finviz ingest, daily batch |
+| 14 | vs 200D MA | Finviz Elite export | `finviz_snapshot.sma200` | Finviz ingest, daily batch |
+| 15 | Latest short ratio | FINRA Reg SHO daily short-volume files | `short_volume_metric.latest_ratio` (view) | FINRA collector, daily batch |
+| 16 | Trend | FINRA Reg SHO daily short-volume files | `short_volume_metric.trend` (view) | FINRA collector, daily batch |
+| 17 | Δ vs 30d baseline | FINRA Reg SHO daily short-volume files | `short_volume_metric.delta_pts` (view) | FINRA collector, daily batch |
+| 18 | RSI (14) | Finviz Elite export | `finviz_snapshot.rsi` | Finviz ingest, daily batch |
+| 19 | Avg vol | Finviz Elite export | `finviz_snapshot.avg_vol_k` | Finviz ingest, daily batch |
+| 20 | Rel vol | Finviz Elite export | `finviz_snapshot.rel_vol` | Finviz ingest, daily batch |
+| 21 | Week | Finviz Elite export | `finviz_snapshot.perf_w` | Finviz ingest, daily batch |
+| 22 | Month | Finviz Elite export | `finviz_snapshot.perf_m` | Finviz ingest, daily batch |
+| 23 | Quarter | Finviz Elite export | `finviz_snapshot.perf_q` | Finviz ingest, daily batch |
+| 24 | YTD | Finviz Elite export | `finviz_snapshot.perf_ytd` | Finviz ingest, daily batch |
+| 25 | Runway (quarters) | SEC EDGAR XBRL companyfacts | `runway_calc.runway_months` divided by 3, at read time | SEC collector and runway, daily batch |
+| 26 | Runway months | SEC EDGAR XBRL companyfacts | `runway_calc.runway_months` | SEC collector and runway, daily batch |
 | 27 | Runway rating | Frontend (lib/format.js runwayRating) | Derived from `runway_calc.runway_months` in the presentation layer | No collection |
-| 28 | Cash/share | Finviz Elite export | `finviz_snapshot.cash_sh` | Finviz ingest, Stage A |
-| 29 | Quick ratio | Finviz Elite export | `finviz_snapshot.quick_ratio` | Finviz ingest, Stage A |
-| 30 | Debt/equity | Finviz Elite export | `finviz_snapshot.td_eq` | Finviz ingest, Stage A |
-| 31 | Inst. transactions | Finviz Elite export | `finviz_snapshot.inst_trans` | Finviz ingest, Stage A |
-| 32 | Short float | Finviz Elite export | `finviz_snapshot.short_float` | Finviz ingest, Stage A |
-| 33 | Insider own | Finviz Elite export | `finviz_snapshot.insider_own` | Finviz ingest, Stage A |
-| 34 | Filings (90d) | SEC EDGAR submissions + Form 4 XML | `insider_metric_daily.filings_count` (view) | Form 4 collector, Stage B |
-| 35 | Open-market BUYS | SEC EDGAR submissions + Form 4 XML | `insider_metric_daily.open_market_buys_count` (view) | Form 4 collector, Stage B |
-| 36 | Open-market SALES | SEC EDGAR submissions + Form 4 XML | `insider_metric_daily.open_market_sales_count` (view) | Form 4 collector, Stage B |
-| 37 | Officers/dirs BUYING | SEC EDGAR submissions + Form 4 XML | `insider_metric_daily.officers_directors_buying_count` (view) | Form 4 collector, Stage B |
-| 38 | Officers/dirs SELLING | SEC EDGAR submissions + Form 4 XML | `insider_metric_daily.officers_directors_selling_count` (view) | Form 4 collector, Stage B |
-| 39 | % under 10b5-1 | SEC EDGAR submissions + Form 4 XML | `insider_metric_daily.pct_10b5_1_dollars` (view) | Form 4 collector, Stage B |
-| 40 | Gross margin | Finviz Elite export | `finviz_snapshot.gross_margin` | Finviz ingest, Stage A |
-| 41 | Op margin | Finviz Elite export | `finviz_snapshot.op_margin` | Finviz ingest, Stage A |
-| 42 | Industry | Finviz Elite export | `finviz_snapshot.industry_raw` and `company.industry` | Finviz ingest, Stage A |
-| 43 | MCap bucket | Computed in-house (from stored data) | `score_result.mcap_bucket` | Scoring, Stage A |
-| 44 | Peer group | Computed in-house (from stored data) | `score_result.peer_group_key` | Scoring, Stage A |
-| 45 | Peer count | Computed in-house (from stored data) | `score_result.peer_n` | Scoring, Stage A |
-| 46 | Earnings date | Finviz Elite export | `finviz_snapshot.earnings_date_text` | Finviz ingest, Stage A |
-| 47 | Total studies | ClinicalTrials.gov API v2 | `catalyst_signal.total_studies` | ClinicalTrials.gov collector, Stage B |
-| 48 | Active Phase 3 | ClinicalTrials.gov API v2 | `catalyst_signal.active_phase_3` | ClinicalTrials.gov collector, Stage B |
-| 49 | Active Phase 2 | ClinicalTrials.gov API v2 | `catalyst_signal.active_phase_2` | ClinicalTrials.gov collector, Stage B |
-| 50 | Latest trial | ClinicalTrials.gov API v2 | `catalyst_signal.latest_trial_nct` | ClinicalTrials.gov collector, Stage B |
-| 51 | Latest status | ClinicalTrials.gov API v2 | `catalyst_signal.latest_trial_status` | ClinicalTrials.gov collector, Stage B |
-| 52 | Next Milestone card | ClinicalTrials.gov API v2 + frontend | Derived at read time from `ct_study_version` | ClinicalTrials.gov collector, Stage B |
-| 53 | Trial Pipeline total / phase chips | ClinicalTrials.gov API v2 + frontend | Derived at read time from `ct_study_version` | ClinicalTrials.gov collector, Stage B |
-| 54 | Indications | ClinicalTrials.gov API v2 + frontend | Derived at read time from `ct_study_version.conditions` | ClinicalTrials.gov collector, Stage B |
-| 55 | Upcoming completions list | ClinicalTrials.gov API v2 + frontend | Derived at read time from `ct_study_version` | ClinicalTrials.gov collector, Stage B |
+| 28 | Cash/share | Finviz Elite export | `finviz_snapshot.cash_sh` | Finviz ingest, daily batch |
+| 29 | Quick ratio | Finviz Elite export | `finviz_snapshot.quick_ratio` | Finviz ingest, daily batch |
+| 30 | Debt/equity | Finviz Elite export | `finviz_snapshot.td_eq` | Finviz ingest, daily batch |
+| 31 | Inst. transactions | Finviz Elite export | `finviz_snapshot.inst_trans` | Finviz ingest, daily batch |
+| 32 | Short float | Finviz Elite export | `finviz_snapshot.short_float` | Finviz ingest, daily batch |
+| 33 | Insider own | Finviz Elite export | `finviz_snapshot.insider_own` | Finviz ingest, daily batch |
+| 34 | Filings (90d) | SEC EDGAR submissions + Form 4 XML | `insider_metric_daily.filings_count` (view) | Form 4 collector, daily batch |
+| 35 | Open-market BUYS | SEC EDGAR submissions + Form 4 XML | `insider_metric_daily.open_market_buys_count` (view) | Form 4 collector, daily batch |
+| 36 | Open-market SALES | SEC EDGAR submissions + Form 4 XML | `insider_metric_daily.open_market_sales_count` (view) | Form 4 collector, daily batch |
+| 37 | Officers/dirs BUYING | SEC EDGAR submissions + Form 4 XML | `insider_metric_daily.officers_directors_buying_count` (view) | Form 4 collector, daily batch |
+| 38 | Officers/dirs SELLING | SEC EDGAR submissions + Form 4 XML | `insider_metric_daily.officers_directors_selling_count` (view) | Form 4 collector, daily batch |
+| 39 | % under 10b5-1 | SEC EDGAR submissions + Form 4 XML | `insider_metric_daily.pct_10b5_1_dollars` (view) | Form 4 collector, daily batch |
+| 40 | Gross margin | Finviz Elite export | `finviz_snapshot.gross_margin` | Finviz ingest, daily batch |
+| 41 | Op margin | Finviz Elite export | `finviz_snapshot.op_margin` | Finviz ingest, daily batch |
+| 42 | Industry | Finviz Elite export | `finviz_snapshot.industry_raw` and `company.industry` | Finviz ingest, daily batch |
+| 43 | MCap bucket | Computed in-house (from stored data) | `score_result.mcap_bucket` | Scoring, daily batch |
+| 44 | Peer group | Computed in-house (from stored data) | `score_result.peer_group_key` | Scoring, daily batch |
+| 45 | Peer count | Computed in-house (from stored data) | `score_result.peer_n` | Scoring, daily batch |
+| 46 | Earnings date | Finviz Elite export | `finviz_snapshot.earnings_date_text` | Finviz ingest, daily batch |
+| 47 | Total studies | ClinicalTrials.gov API v2 | `catalyst_signal.total_studies` | ClinicalTrials.gov collector, daily batch |
+| 48 | Active Phase 3 | ClinicalTrials.gov API v2 | `catalyst_signal.active_phase_3` | ClinicalTrials.gov collector, daily batch |
+| 49 | Active Phase 2 | ClinicalTrials.gov API v2 | `catalyst_signal.active_phase_2` | ClinicalTrials.gov collector, daily batch |
+| 50 | Latest trial | ClinicalTrials.gov API v2 | `catalyst_signal.latest_trial_nct` | ClinicalTrials.gov collector, daily batch |
+| 51 | Latest status | ClinicalTrials.gov API v2 | `catalyst_signal.latest_trial_status` | ClinicalTrials.gov collector, daily batch |
+| 52 | Next Milestone card | ClinicalTrials.gov API v2 + frontend | Derived at read time from `ct_study_version` | ClinicalTrials.gov collector, daily batch |
+| 53 | Trial Pipeline total / phase chips | ClinicalTrials.gov API v2 + frontend | Derived at read time from `ct_study_version` | ClinicalTrials.gov collector, daily batch |
+| 54 | Indications | ClinicalTrials.gov API v2 + frontend | Derived at read time from `ct_study_version.conditions` | ClinicalTrials.gov collector, daily batch |
+| 55 | Upcoming completions list | ClinicalTrials.gov API v2 + frontend | Derived at read time from `ct_study_version` | ClinicalTrials.gov collector, daily batch |
