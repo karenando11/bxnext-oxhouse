@@ -919,7 +919,7 @@ Feature: Screener page
 
 ## Step 10: Finviz ingestion
 
-**Status: built and tested against synthetic exports; the first real download has not happened.** Code is in `backend/apps/marketdata/finviz/` (column map, parser, download client, ingestion service) and `backend/apps/marketdata/storage.py`; the commands are `ingest_finviz` and `finviz_contract_check`; tests are `backend/tests/test_finviz_parser.py`, `test_finviz_client.py` and `test_finviz_ingest.py`. No real Finviz file or token was available when it was built, so the column map is unverified (see the open items). **Depends on:** Step 5. **Size:** M.
+**Status: built, and checked against one real download on 2026-11-18** (1,054 companies loaded into a local database with every data-quality check passing; the real file is kept out of the repository). Code is in `backend/apps/marketdata/finviz/` (column map, parser, download client, ingestion service) and `backend/apps/marketdata/storage.py`; the commands are `ingest_finviz` and `finviz_contract_check`; tests are `backend/tests/test_finviz_parser.py`, `test_finviz_client.py` and `test_finviz_ingest.py`. The tests in `test_finviz_real_export.py` read the saved real file and are skipped when it is absent. **Depends on:** Step 5. **Size:** M.
 
 ```gherkin
 Feature: Daily Finviz snapshot
@@ -996,9 +996,9 @@ Feature: Daily Finviz snapshot
 | Item | Default |
 |---|---|
 | A raw Finviz CSV sample (F6) | Still needed. `python manage.py finviz_contract_check --save backend/tests/fixtures/private/finviz_raw.csv` downloads one with `FINVIZ_AUTH_TOKEN`, writes nothing to the database, and prints how every header lined up |
-| The column map (header texts per field, 50 columns) | Written from the data model's field list and Finviz's usual header texts, with aliases. **Unverified** against the reference workbook's "Finviz Column Map" sheet (F10) and a real file; a required header that is missing stops the load, any other missing header fails the blank-column check |
-| The `c=` column parameter of the export URL | Setting `finviz.columns`, empty by default, which uses the columns of the account's saved view 151. Set it to the 50 column ids to make the request self-contained |
-| Units of cells without a K, M, B or T suffix | Taken as already in the stored unit (market cap and shares in millions, average volume in thousands); a suffix is scaled. Confirm on the first real file |
+| The column map (header texts per field, 50 columns) | Confirmed on the real download: all 50 fields matched. One correction was needed (the price-to-cash header is `P/Cash`; `P/C` stays as an alias). Still to compare with the reference workbook's "Finviz Column Map" sheet (F10) |
+| The `c=` column parameter of the export URL | Not set. The account's saved view 151 returns 151 columns (101 not in the map), so the unused ones are not stored (`finviz.store_extras`, default off). Setting `finviz.columns` to the 50 column ids would make the request smaller and self-contained |
+| Units of cells without a K, M, B or T suffix | Confirmed on the real download: market cap and shares arrive in millions and average volume in thousands, with no suffix; percent columns carry a % sign, and the 52-week columns are percent distances. The export has no repeated headers (those came from the old system's own request), though the parser still handles them |
 | Alerts | A failed step or a failed check is stored (a failed `data_quality_check`, a failed `source_call`) and logged as an error. Sending the email is Step 17 |
 | A failed data-quality check | The load stands and the run is marked `partial`; the download and format failures fail the step. Step 16 decides: a failed row-count check or a blank column among the scoring inputs stops scoring; any other failed check lets scoring proceed with the run marked `partial` |
 | Row-count comparison | Against the latest earlier day that has snapshots (which can be the fixture day), more than the `finviz.row_count_change_alert_pct` setting (20) fails |

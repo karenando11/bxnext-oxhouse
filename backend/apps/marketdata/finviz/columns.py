@@ -75,7 +75,7 @@ COLUMNS: tuple[Column, ...] = (
     Column("fwd_pe", ("Forward P/E",)),
     Column("ps", ("P/S", "Price/Sales")),
     Column("pb", ("P/B", "Price/Book")),
-    Column("pcash", ("P/C", "Price/Cash")),
+    Column("pcash", ("P/Cash", "P/C", "Price/Cash")),
     # Balance sheet and margins (10)
     Column("quick_ratio", ("Quick Ratio",)),
     Column("cur_ratio", ("Current Ratio",)),

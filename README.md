@@ -17,7 +17,7 @@ backend/              Django application (API, pipeline, scoring)
   Dockerfile
   pyproject.toml      dependencies and tool configuration (uv)
 frontend/             React application (not created yet)
-docker-compose.yml    local PostgreSQL, plus the backend container on demand
+docker-compose.yml    local PostgreSQL and the backend (development image, auto-reload)
 Makefile              developer commands, run from the repository root
 .github/workflows/    CI, one job per component
 ```
@@ -27,6 +27,35 @@ spans components: orchestration, CI and documentation.
 
 ## Quick start
 
+### Easiest: everything in Docker
+
+Requirements: Docker with Compose, and `make`. Nothing else (no Python or uv).
+
+```bash
+make docker-up      # builds on first use, then starts PostgreSQL and the backend
+make docker-user    # create a sign-in for the API (asks for a username and password)
+make docker-test    # the full test suite inside the container
+make docker-down    # stop (data is kept)
+```
+
+The backend is on http://localhost:8000 and reloads when you edit the code. It applies migrations
+when it starts. Handy extras:
+
+| Command | What it does |
+|---|---|
+| `make docker-manage CMD="score_day 2026-10-12"` | Run any `manage.py` command in the container |
+| `make docker-logs` | Follow the backend log |
+| `make docker-shell` | A shell inside the backend container |
+| `make docker-prod` | Build and start the production image on http://localhost:8001 |
+
+The backend container **always uses the database container**, never the database named in
+`backend/.env`, and runs with a development secret key, so production credentials in that file are
+never used inside Docker. Other values in `backend/.env` (such as `FINVIZ_AUTH_TOKEN`) are passed
+through. Raw downloads are kept in a Docker volume. To erase the local data:
+`docker compose down -v`.
+
+### Or run Python on your machine
+
 Requirements: [uv](https://docs.astral.sh/uv/), Docker with Compose, and `make`.
 
 ```bash
@@ -35,6 +64,10 @@ make bootstrap   # creates backend/.env from backend/.env.example, installs depe
 make run         # starts the backend on http://localhost:8000
 make check       # lint, type check, Django checks, migration check and tests
 ```
+
+`make bootstrap`, `make migrate` and `make run` read `backend/.env`. If that file names a database
+that is not on this machine (for example Neon production), they refuse to run and tell you so. To
+do it on purpose: `make migrate ALLOW_REMOTE=1`.
 
 Health check: `curl http://localhost:8000/healthz` returns the database status and the
 latest applied migration, or `503` when the database is unreachable.
@@ -135,6 +168,28 @@ The backend serves JSON under `/api/` for the React frontend: sign-in, the scree
 filters, why-excluded, near-the-line, the funnel log, saved screens and a CSV export. See
 `docs/api.md`.
 
+### Databases: local, development and production
+
+| Use | Database | Notes |
+|---|---|---|
+| Tests, loaders, experiments | The Docker Postgres from `make up`, or a Neon `development` branch | `load_golden` and the test suite write real rows |
+| The running app and nightly jobs | The Neon `production` branch | Never run tests or `load_golden` here |
+
+The test suite refuses to start when `DATABASE_URL` points at a remote host (set
+`OXHOUSE_ALLOW_REMOTE_TEST_DB=1` to override on a throwaway branch), and `load_golden` needs
+`--allow-remote`.
+
+**Neon.** Each branch has two addresses. Put them in your own `backend/.env` (git-ignored); never
+commit or paste them:
+
+- `DATABASE_URL`: the **pooled** address (host contains `-pooler`), used by the web app. The
+  settings detect it and turn off server-side cursors and prepared statements, which a transaction
+  pooler cannot support. Keep `?sslmode=require` on the URL; `channel_binding` is passed through.
+- `DATABASE_DIRECT_URL`: the **direct** address. Every `python manage.py <command>` except
+  `runserver` uses it when set, so migrations and the batch jobs bypass the pooler.
+
+Use a paid Neon tier with point-in-time recovery and scale-to-zero turned off for production.
+
 ### Finviz ingestion
 
 ```bash
@@ -170,7 +225,8 @@ All run from the repository root.
 | `make typecheck` | mypy with the Django plugin |
 | `make down` | Stop the database container |
 
-To run the backend itself in a container: `docker compose --profile app up --build`.
+The Docker commands (`make docker-up`, `docker-test`, `docker-manage` and the rest) are described in
+the quick start.
 
 ## Adding the React frontend later
 

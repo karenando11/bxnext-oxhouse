@@ -28,6 +28,12 @@ def golden_path() -> Path:
 
 
 @pytest.fixture(scope="session")
+def finviz_raw_path() -> Path:
+    """A real, unprocessed Finviz export saved with `finviz_contract_check --save`."""
+    return _private_file("OXHOUSE_FINVIZ_RAW", "finviz_raw.csv")
+
+
+@pytest.fixture(scope="session")
 def runway_path() -> Path:
     return _private_file("OXHOUSE_RUNWAY_EXPORT", "edgar_runway_export_2026-10-14.csv")
 
@@ -76,3 +82,23 @@ def no_outbound_network(monkeypatch: pytest.MonkeyPatch) -> None:
         return real_connect(self, address)
 
     monkeypatch.setattr(socket.socket, "connect", guarded)
+
+
+def pytest_sessionstart(session: pytest.Session) -> None:
+    """Tests create a database and write rows, so they must not run against a shared server."""
+    from django.conf import settings
+
+    from apps.platform.safety import (
+        ALLOW_REMOTE_TESTS_VAR,
+        RemoteDatabaseRefused,
+        ensure_local_database,
+    )
+
+    try:
+        ensure_local_database(
+            settings.DATABASES["default"]["HOST"],
+            "run the test suite",
+            allowed=os.environ.get(ALLOW_REMOTE_TESTS_VAR) == "1",
+        )
+    except RemoteDatabaseRefused as exc:
+        pytest.exit(f"{exc} Set {ALLOW_REMOTE_TESTS_VAR}=1 to override.", returncode=2)

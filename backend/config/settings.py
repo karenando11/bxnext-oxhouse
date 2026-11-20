@@ -7,6 +7,7 @@ All deployment-specific values come from environment variables (see
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
@@ -16,7 +17,9 @@ from config.envconfig import ConfigError, read_config
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 try:
-    _config = read_config(os.environ)
+    # A `manage.py <command>` run (migrations, batch jobs) may use the direct database address.
+    _command = sys.argv[1] if Path(sys.argv[0]).name == "manage.py" and len(sys.argv) > 1 else None
+    _config = read_config(os.environ, management_command=_command)
 except ConfigError as exc:
     raise ImproperlyConfigured(str(exc)) from exc
 

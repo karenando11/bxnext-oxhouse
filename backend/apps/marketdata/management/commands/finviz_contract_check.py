@@ -69,8 +69,12 @@ class Command(BaseCommand):
         for column in COLUMNS:
             if column.field not in parsed.mapped:
                 continue
-            blanks = sum(1 for r in parsed.rows if r.values.get(column.field) in (None, ""))
-            samples = [r.values.get(column.field) for r in parsed.rows[:SAMPLE_ROWS]]
+
+            def cell(row: Any, field: str = column.field) -> Any:
+                return row.ticker if field == "ticker" else row.values.get(field)
+
+            blanks = sum(1 for r in parsed.rows if cell(r) in (None, ""))
+            samples = [cell(r) for r in parsed.rows[:SAMPLE_ROWS]]
             self.stdout.write(
                 f"  {column.field:<20} #{parsed.mapped[column.field]:<3} "
                 f"blank {blanks:>5}/{parsed.row_count}  {samples}"

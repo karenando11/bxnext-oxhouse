@@ -116,12 +116,19 @@ def test_values_are_stored_in_the_documented_units(storage: LocalRawStorage) -> 
 
 
 @pytest.mark.django_db
-def test_unmapped_columns_are_kept_in_extras(storage: LocalRawStorage) -> None:
-    result = ingest(
-        content=export_csv([company_row("ABC")], extra={"Analyst Recom.": "1.8"}), storage=storage
+def test_unmapped_columns_are_reported_and_kept_only_when_asked(storage: LocalRawStorage) -> None:
+    raw = export_csv([company_row("ABC")], extra={"Analyst Recom.": "1.8"})
+    result = ingest(content=raw, storage=storage)
+    assert FinvizSnapshot.objects.get().extras == {}  # the default: do not keep what we do not use
+    check = checks(result, "unmapped_columns")[0]
+    assert (check.status, check.detail) == (
+        "pass",
+        {"headers": ["Analyst Recom."], "stored": False},
     )
-    assert FinvizSnapshot.objects.get().extras == {"Analyst Recom.#50": "1.8"}
-    assert checks(result, "unmapped_columns")[0].status == "warn"
+    Setting.objects.create(key="finviz.store_extras", value=True)
+    ingest(DAY + timedelta(days=1), raw, storage)
+    kept = FinvizSnapshot.objects.get(as_of_date=DAY + timedelta(days=1))
+    assert kept.extras == {"Analyst Recom.#50": "1.8"}
 
 
 # ------------------------------------------------------------ companies and tickers
@@ -449,9 +456,7 @@ def test_repeated_52_week_headers_are_stored_by_position(storage: LocalRawStorag
     result = ingest(content=two_52_week_pairs(percent_first=False), storage=storage)
     snap = FinvizSnapshot.objects.get(company__tickers__ticker="T000")
     assert (snap.w52h, snap.w52l) == (-29.61, 41.2)
-    assert snap.extras == {"52-Week High#50": "7.65", "52-Week Low#51": "3.10"} or set(
-        snap.extras.values()
-    ) == {"7.65", "3.10"}
+    assert snap.extras == {}
     check = checks(result, "duplicate_headers")[0]
     assert check.status == "pass"
     assert set(check.detail["chosen"]) == {"w52h", "w52l"}
@@ -477,7 +482,10 @@ def test_the_ingest_command_loads_a_saved_file(
 
 
 @pytest.mark.django_db
-def test_the_ingest_command_reports_problems(tmp_path: Path, settings: Any) -> None:
+def test_the_ingest_command_reports_problems(
+    tmp_path: Path, settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("FINVIZ_AUTH_TOKEN", raising=False)  # whatever the environment holds
     settings.RAW_STORAGE_DIR = tmp_path / "raw"
     with pytest.raises(CommandError, match="Not a date"):
         call_command("ingest_finviz", "--date", "soon")

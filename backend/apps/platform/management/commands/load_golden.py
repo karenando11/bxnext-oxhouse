@@ -9,8 +9,10 @@ from pathlib import Path
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
+from django.db import connection
 
 from apps.platform.golden import load_golden
+from apps.platform.safety import RemoteDatabaseRefused, ensure_local_database
 
 
 class Command(BaseCommand):
@@ -19,6 +21,11 @@ class Command(BaseCommand):
     def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument("export", type=Path, help="The golden export CSV.")
         parser.add_argument("--runway", type=Path, help="The runway export CSV to overlay.")
+        parser.add_argument(
+            "--allow-remote",
+            action="store_true",
+            help="Load fixture data even though the database is not on this machine.",
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         export: Path = options["export"]
@@ -26,6 +33,14 @@ class Command(BaseCommand):
         for path in (export, runway):
             if path is not None and not path.is_file():
                 raise CommandError(f"File not found: {path}")
+        try:
+            ensure_local_database(
+                connection.settings_dict["HOST"],
+                "load fixture data",
+                allowed=options["allow_remote"],
+            )
+        except RemoteDatabaseRefused as exc:
+            raise CommandError(f"{exc} Use --allow-remote to override.") from exc
         result = load_golden(export, runway)
         self.stdout.write(
             f"Loaded {result.companies} companies, {result.snapshots} snapshots, "

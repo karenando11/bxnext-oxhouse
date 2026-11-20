@@ -88,6 +88,11 @@ def test_earnings_date_is_parsed_only_in_the_known_format(
 # ---------------------------------------------------------------------- the column map
 
 
+def test_the_real_p_over_cash_header_is_recognised() -> None:
+    assert header_lookup()[normalise_header("P/Cash")].field == "pcash"
+    assert header_lookup()[normalise_header("P/C")].field == "pcash"
+
+
 def test_the_map_has_50_columns_and_unique_fields() -> None:
     assert len(COLUMNS) == EXPECTED_COLUMN_COUNT == 50
     assert len(set(FIELDS)) == 50

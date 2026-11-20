@@ -10,4 +10,6 @@ __pycache__/
 .ruff_cache/
 .pytest_cache/
 staticfiles/
-tests/
+var/
+# Licensed data stays out of every image; the dev container sees it through the source mount.
+tests/fixtures/private/

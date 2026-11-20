@@ -338,6 +338,8 @@ def _load(parsed: ParsedExport, day: date, call: SourceCall, result: IngestResul
             changed, ["name", "sector", "industry", "last_seen_date"], batch_size=BATCH_SIZE
         )
 
+    # The saved Finviz view can carry 100 or more columns we do not use; keeping them is opt-in.
+    store_extras = bool(get_setting("finviz.store_extras", False))
     existing = {
         s.company_id: s
         for s in FinvizSnapshot.objects.filter(as_of_date=day, company__in=companies.values())
@@ -349,7 +351,7 @@ def _load(parsed: ParsedExport, day: date, call: SourceCall, result: IngestResul
         values = {name: row.values.get(name) for name in NUMERIC_FIELDS}
         values.update({name: row.values.get(name) or "" for name in TEXT_FIELDS})
         values["earnings_date"] = row.values.get("earnings_date")
-        values["extras"] = row.extras
+        values["extras"] = row.extras if store_extras else {}
         values["source_call"] = call
         wanted[company.pk] = values
         create_with[company.pk] = {"company": company, "as_of_date": day}
@@ -482,9 +484,12 @@ def _run_checks(
             result,
             "unmapped_columns",
             "finviz",
-            warn,
+            ok,
             observed=str(len(parsed.unmapped_headers)),
-            detail={"headers": parsed.unmapped_headers},
+            detail={
+                "headers": parsed.unmapped_headers,
+                "stored": bool(get_setting("finviz.store_extras", False)),
+            },
         )
     if parsed.duplicate_headers:
         headers = parsed.headers

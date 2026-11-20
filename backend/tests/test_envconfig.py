@@ -79,3 +79,67 @@ def test_parse_bool(raw: str, expected: bool) -> None:
 def test_parse_bool_rejects_garbage_and_names_the_variable() -> None:
     with pytest.raises(ConfigError, match="DJANGO_DEBUG"):
         parse_bool("DJANGO_DEBUG", "maybe")
+
+
+# ------------------------------------------------------------- managed database (Neon)
+
+NEON = "postgresql://owner:pw@ep-cool-name-pooler.c-11.us-east-1.aws.neon.tech/neondb"
+NEON_DIRECT = "postgresql://owner:pw@ep-cool-name.c-11.us-east-1.aws.neon.tech/neondb"
+
+
+def test_url_options_are_passed_to_the_driver() -> None:
+    database = parse_database_url(f"{NEON_DIRECT}?sslmode=require&channel_binding=require")
+    assert database["OPTIONS"] == {"sslmode": "require", "channel_binding": "require"}
+    assert "DISABLE_SERVER_SIDE_CURSORS" not in database
+
+
+def test_a_plain_local_url_has_no_options() -> None:
+    assert "OPTIONS" not in parse_database_url("postgres://u:p@localhost:5432/db")
+
+
+def test_a_pooled_host_disables_server_side_cursors_and_prepared_statements() -> None:
+    database = parse_database_url(f"{NEON}?sslmode=require")
+    assert database["DISABLE_SERVER_SIDE_CURSORS"] is True
+    assert database["OPTIONS"] == {"sslmode": "require", "prepare_threshold": None}
+
+
+def test_the_pgbouncer_flag_also_marks_a_pooled_connection() -> None:
+    database = parse_database_url("postgres://u:p@db.example/db?pgbouncer=true&sslmode=require")
+    assert database["DISABLE_SERVER_SIDE_CURSORS"] is True
+    assert "pgbouncer" not in database["OPTIONS"]
+
+
+def test_an_unsupported_url_option_is_rejected_by_name() -> None:
+    with pytest.raises(ConfigError, match="unsupported option: sslmod"):
+        parse_database_url("postgres://u:p@db.example/db?sslmod=require")
+
+
+def test_errors_name_the_variable_the_url_came_from() -> None:
+    with pytest.raises(ConfigError, match="DATABASE_DIRECT_URL must start"):
+        parse_database_url("mysql://u:p@h/db", "DATABASE_DIRECT_URL")
+
+
+def test_the_direct_url_is_used_by_management_commands_only() -> None:
+    env = {**VALID_ENV, "DATABASE_URL": NEON, "DATABASE_DIRECT_URL": NEON_DIRECT}
+    assert read_config(env).database["HOST"].endswith("neon.tech")
+    assert "-pooler" in read_config(env).database["HOST"]
+    assert "-pooler" not in read_config(env, management_command="migrate").database["HOST"]
+    assert "-pooler" in read_config(env, management_command="runserver").database["HOST"]
+
+
+def test_without_a_direct_url_everything_uses_the_main_one() -> None:
+    env = {**VALID_ENV, "DATABASE_URL": NEON}
+    assert "-pooler" in read_config(env, management_command="migrate").database["HOST"]
+    assert (
+        "-pooler"
+        in read_config({**env, "DATABASE_DIRECT_URL": "  "}, management_command="migrate").database[
+            "HOST"
+        ]
+    )
+
+
+def test_a_bad_direct_url_fails_only_when_it_is_used() -> None:
+    env = {**VALID_ENV, "DATABASE_DIRECT_URL": "not a url"}
+    assert read_config(env).database["NAME"] == "oxhouse"
+    with pytest.raises(ConfigError, match="DATABASE_DIRECT_URL"):
+        read_config(env, management_command="migrate")
