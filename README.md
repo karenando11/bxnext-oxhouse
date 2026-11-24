@@ -4,7 +4,7 @@ An internal research tool for screening and diligence on small-cap healthcare co
 Phase 1 builds the screener: a daily universe from Finviz, scores computed in-house, and a
 screen with a company page.
 
-Status: **Phase 1, Steps 0 to 10** built. Step 9 is backend only (the screener page is the React frontend's job). Step 10 (Finviz ingestion) is tested on synthetic exports only: the first real download, with `FINVIZ_AUTH_TOKEN`, is still to do. Next: Step 11, SEC collectors.
+Status: **Phase 1, Steps 0 to 11B** built. Step 9 is backend only (the screener page is the React frontend's job). Step 10 (Finviz ingestion) is tested on synthetic exports only: the first real download, with `FINVIZ_AUTH_TOKEN`, is still to do. Steps 11, 11A and 11B (SEC collectors, FINRA short volume, Form 4 insider activity) are also replayed on real SEC and FINRA responses recorded on 2026-11-20 (not kept in the repository; `scripts/record_fixtures.py` records them again); a multi-owner Form 4 and an unparseable one were missing from those recordings. Next: Step 12, runway calculator.
 
 ## Repository layout
 
@@ -245,6 +245,15 @@ commit or paste them:
 
 Use a paid Neon tier with point-in-time recovery and scale-to-zero turned off for production.
 
+### Raw downloads: kept in development, not in production
+
+`RAW_STORAGE_BACKEND` is `local` or `none`. With `DJANGO_DEBUG` on it defaults to `local` (files
+under `RAW_STORAGE_DIR`); with it off, to `none`: the SEC, FINRA and Finviz downloads are parsed
+and the rows stored, together with each download's hash and size on `source_call`, but no file
+is written anywhere. Setting `local` with debug off stops the app from starting. Without a stored
+copy a parsing bug means downloading again from the source, and the SEC step fetches the ticker
+file on every run instead of once a day.
+
 ### Finviz ingestion
 
 ```bash
@@ -254,9 +263,55 @@ python manage.py ingest_finviz                 # download today's export and loa
 python manage.py ingest_finviz --file path.csv --date 2026-10-12   # load a saved raw file
 ```
 
-The download is stored unchanged under `RAW_STORAGE_DIR` and recorded in `source_call`. A blank
+The download is recorded in `source_call` (hash, size, status). In development it is also kept
+unchanged under `RAW_STORAGE_DIR`; in production no raw file is kept (see below). A blank
 column, a large row-count change, a changed universe definition and similar problems are recorded
 as `data_quality_check` rows. Loading the same file for the same day twice changes nothing.
+
+### Recording real SEC and FINRA files
+
+```bash
+export SEC_USER_AGENT="Your Team you@example.com"
+uv run --project backend python scripts/record_fixtures.py sec  KTTA PACS BNTX --out backend/tests/fixtures/recorded/sec
+uv run --project backend python scripts/record_fixtures.py form4 PACS RZLT --out backend/tests/fixtures/recorded/form4
+uv run --project backend python scripts/record_fixtures.py finra --days 3 --out backend/tests/fixtures/recorded/finra
+```
+
+Files are saved exactly as received with a `manifest.json`. Nothing is kept in the repository:
+`tests/test_recorded_fixtures.py` replays a recording through the collectors if you make one in
+`backend/tests/fixtures/recorded/`, and skips otherwise.
+
+### SEC collection
+
+```bash
+export SEC_USER_AGENT="Your Team research@example.com"   # a name and a contact address; the SEC asks for both
+python manage.py collect_sec                    # tickers to CIKs, new filings, facts refresh for today
+python manage.py collect_sec --ticker KTTA --ticker PACS --date 2026-10-12
+```
+
+Every SEC request goes through one client with one shared limiter (at least 110 ms apart) and up to
+three attempts with backoff. Only allow-listed USD facts are stored (`us-gaap` first, `ifrs-full`
+only if `us-gaap` has nothing). One company's failure is recorded on its own `source_call` and does
+not stop the others. New Form 4 entries are returned on the result and, unless `--skip-form4` is
+given, fetched and stored straight away by the Form 4 collector.
+
+Form 4 (insider activity): documents from the last 90 days are fetched through the same client and
+limiter and stored with their non-derivative transactions. An unparseable document is stored as
+`failed` with its reason, never counts, and is reported by a data-quality check; a document that
+cannot be fetched is offered again by the next run. A 4/A replaces the filing it amends. The
+metrics are the `insider_metric_daily` view.
+
+### FINRA short volume
+
+```bash
+python manage.py collect_short_volume                       # fetch the missing daily files, load the universe's rows
+python manage.py collect_short_volume --day 2026-10-09      # fetch exactly that date again
+```
+
+The first run fetches the previous 45 calendar days; later runs look back one week for dates not
+loaded yet. A weekend or holiday is recorded as `no_file_for_date`, not as a failure. A failed
+download is stored and never blocks scoring: the `short_volume_metric` view keeps using the latest
+stored days and reports their age. The label on the page must say "short volume, not short interest".
 
 ### Golden fixtures
 

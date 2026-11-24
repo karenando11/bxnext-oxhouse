@@ -27,12 +27,12 @@ Test levels: **Unit** (pure code, no database, no network), **Integration** (dat
 | F4 | Reference workbook calculator example | Eight-peer cluster plus EXAMPLE-TICKER: Outlier 10 (clamped), Divergence 22.418, Recency 1.0, Composite 7.835 with Cash 7.2 and Milestone 8.5 | Available |
 | F5 | Cached ClinicalTrials.gov studies | Studies for 86 tickers pulled live on 2026-10-13. Not identical to the 10-12 state | Available (held by the analyst) |
 | F6 | Raw Finviz Elite CSV (view 151, `f=sec_healthcare`) | One unprocessed download | **To obtain** |
-| F7 | Recorded SEC responses | `company_tickers.json`, `submissions`, `companyfacts` for KTTA, PACS, an IFRS filer (for example BNTX), a non-USD filer, a ticker with no CIK, a 10-K/A filer | **To record** (SEC blocked the analyst's shared IP) |
+| F7 | Recorded SEC responses | `company_tickers.json`, `submissions`, `companyfacts` for KTTA, PACS, an IFRS filer (for example BNTX), a non-USD filer, a ticker with no CIK, a 10-K/A filer | **Recorded 2026-11-20** from the developer machine (the SEC did not block it): `company_tickers.json`, and submissions and companyfacts for KTTA, RZLT, XBIT, YDES, APLM, SMMT, PACS, ALPS and BNTX; INDV has no CIK. Covers a US filer, an IFRS filer in USD (APLM), a euro filer (BNTX), a filer with no XBRL facts (ALPS), a ticker with no CIK and 10-K/A, 10-Q/A, 20-F/A and 6-K/A filers. The files were removed from the repository afterwards (raw files are not to be kept locally); re-record with `scripts/record_fixtures.py` |
 | F8 | `company_info_fields.xlsx` | Field list, sources, derivations, display formats | Available |
 | F9 | ABEO research report (PDF) | Page layout and tile values | Available |
 | F10 | Finviz column map | Internal key to Finviz header mapping (reference workbook, sheet "Finviz Column Map") | Available |
-| F11 | Recorded FINRA short-volume files | Three consecutive trading days, a weekend date (no file), and a day with a universe ticker missing | **To record** |
-| F12 | Recorded Form 4 XML documents | An officer purchase, a sale under a 10b5-1 plan, a sale not under a plan, a multi-owner filing, a gift (code G), an amendment (4/A), and one that fails to parse | **To record** |
+| F11 | Recorded FINRA short-volume files | Three consecutive trading days, a weekend date (no file), and a day with a universe ticker missing | **Recorded 2026-11-20**: three consecutive trading days (17 to 19 November 2026) and a Sunday, which FINRA answers with 403. The files were removed afterwards; re-record with the script. The "universe ticker missing" case needs no recording |
+| F12 | Recorded Form 4 XML documents | An officer purchase, a sale under a 10b5-1 plan, a sale not under a plan, a multi-owner filing, a gift (code G), an amendment (4/A), and one that fails to parse | **Recorded 2026-11-20, partly**: 246 documents from RZLT, SMMT, XBIT, PACS, KTTA and APLM cover a purchase, planned and unplanned sales, gifts, option exercises, derivative-only filings and eleven 4/A amendments. **Still missing**: a multi-owner filing (none of the 246 has two reporting owners) and an unparseable document (the synthetic ones stand in). The files were removed afterwards; re-record with the script |
 
 F3 expected values:
 
@@ -1003,7 +1003,7 @@ Feature: Daily Finviz snapshot
 | A failed data-quality check | The load stands and the run is marked `partial`; the download and format failures fail the step. Step 16 decides: a failed row-count check or a blank column among the scoring inputs stops scoring; any other failed check lets scoring proceed with the run marked `partial` |
 | Row-count comparison | Against the latest earlier day that has snapshots (which can be the fixture day), more than the `finviz.row_count_change_alert_pct` setting (20) fails |
 | Industry changes | The company's industry is updated and the change is stored in the `industry_changes` check detail; there is no history table, but every day's snapshot keeps its `industry_raw` |
-| Raw file storage | Local disk under `RAW_STORAGE_DIR` (default `backend/var/raw`, git-ignored), keyed by day and content hash; an object store replaces it later behind the same interface |
+| Raw file storage | **Development**: local disk under `RAW_STORAGE_DIR` (default `backend/var/raw`, git-ignored), keyed by day and content hash. **Production: no raw files are kept** (decided 2026-11-20, replacing the earlier object-store plan): `RAW_STORAGE_BACKEND` defaults to `none` when `DJANGO_DEBUG` is off, `source_call` keeps the hash, size and status with an empty `storage_uri`, and `local` is refused in production. Consequence: a parsing bug is repaired by downloading again from the source, and the SEC ticker file is fetched on every run |
 | The two Finviz columns both headed "52-Week High" and "52-Week Low" | `w52h` and `w52l` store percent distance |
 | Finviz terms on storing daily history and on AI processing | To be checked before Phase 4; storage proceeds |
 | How ADRs and foreign listings are identified | Name patterns plus country field when present |
@@ -1084,7 +1084,13 @@ Feature: SEC EDGAR collection
 | Contact details for the User-Agent | A shared team address supplied through configuration |
 | SEC nightly bulk archives instead of per-ticker calls | Per-ticker with change detection first; evaluate bulk if volume requires |
 | Final allow-list of tags (cash, short-term investments, operating cash flow, R&D, revenue) | Tags from the other system's documented lists |
-| Run from the production IP; the analyst's shared IP was blocked | Record fixtures from the production host |
+| Run from the production IP; the analyst's shared IP was blocked | Fixtures were recorded from the developer machine without a block. The production host's IP is still to be confirmed on its first run |
+| Built (Step 11) | `apps/sec/client.py` (one client, one shared limiter, retries), `parsing.py`, `collector.py`, command `collect_sec`. Tested on **synthetic** responses shaped like the six F7 cases; replace them with the recordings when F7 exists |
+| Where the User-Agent comes from | Environment variable `SEC_USER_AGENT`, read at call time; a missing value stops the stage and is recorded as a failed check |
+| When companyfacts is fetched | A new stored filing, no history for the CIK, or the last attempt failed. A filer whose last result was `no_companyfacts` (404) or `non_usd_only` is not asked again until it files something |
+| Older filings | Only the submissions feed's `recent` block is read; the older `files` pages are not |
+| Form 4 hand-off | New 4 and 4/A accessions are returned on the result and passed to an optional `form4_handler`; nothing is stored for them until Step 11B |
+| Tag allow-list | Cash, short-term investments, operating cash flow, R&D and revenue tags for `us-gaap`, and the matching `ifrs-full` tags, in `apps/sec/parsing.py`; still to be confirmed against the other system's lists |
 
 **Test plan**
 | ID | Level | Test | Data | Pass condition |
@@ -1179,6 +1185,14 @@ Feature: FINRA Reg SHO daily short volume
 | Ticker format differences between FINRA and Finviz (share classes, punctuation) | Normalise both sides; unmatched tickers get `not_in_finra_file` |
 | Maximum carry-forward age | 5 trading days |
 | Whether to store the short-exempt volume | Stored, not displayed |
+| Built (Step 11A) | `apps/marketdata/finra/` (client, parser, ingest) and the command `collect_short_volume`. The metric view and function already existed from Step 5. Tested on **synthetic** files; replace them with the F11 recordings when they exist |
+| Which dates are fetched | The previous 45 calendar days on the first run (no short-volume rows and no loaded FINRA call); afterwards the previous 7 days that are not loaded. The run's own date is never fetched. A weekend is recorded once without a request |
+| How FINRA signals "no file" | **Confirmed**: a Sunday answered 403. 404 is treated the same, and both become `no_file_for_date`. Risk: a real block would look the same |
+| Fractional volumes | **Found in the real files**: 96% of rows carry fractions (`637633.605702`). Volumes are rounded half up to whole shares on load (the columns are integers); the effect on a ratio is far below four decimals. Storing the exact values would need a column change and a migration |
+| Case-sensitive symbols | **Found in the real files**: `BCpC` and `BCPC` are different securities. Symbols are kept as written and a symbol with a lowercase letter only matches an identical ticker, never the punctuation-stripped one |
+| Where `not_in_finra_file` is recorded | Per loaded date, in the `finra_universe_coverage` check's detail (status `warn`; `fail` if none of the universe is in the file). A company with no stored days has no metric row, and the company page already reports `not_in_finra_file` for it |
+| Ticker matching | Exact symbol first, then with punctuation removed (`BRK.B` matches `BRK-B`). Two universe tickers that become the same after removing punctuation are only matched exactly |
+| Bad rows and bad files | A row that cannot be read is skipped and counted (`finra_malformed_rows`, `warn`); a wrong header or no readable row fails that date with `parse_error` (`finra_format`, `fail`). Download failures after three attempts give a `warn` check, because Step 16 decides what blocks |
 
 **Test plan**
 | ID | Level | Test | Data | Pass condition |
@@ -1288,6 +1302,14 @@ Feature: SEC Form 4 insider activity
 | 10b5-1 checkbox on filings made before it existed | Treated as not 10b5-1 |
 | Volume and first-run backfill time for about 1,053 companies | To be measured on the first run |
 | Maximum carry-forward age | 7 days |
+| Built (Step 11B) | `apps/sec/form4.py` (parser), `apps/sec/form4_collector.py` (fetch, store, amendments, checks) and `collect_sec`, which hands new entries to it unless `--skip-form4`. The metric views and functions already existed from Step 5. Tested on **synthetic** documents shaped like the seven F12 cases; replace them with the recordings when F12 exists |
+| What is queued | Only Form 4 and 4/A entries filed in the last 90 days (found in the end-to-end test: queuing every entry in the feed meant about 5,000 entries for 20 companies, 99% discarded) |
+| Which document is fetched | The raw XML: the submissions feed names the styled view (`xslF345X05/name.xml`), so the folder prefix is dropped. Under the issuer's CIK |
+| How a 4/A finds its original | The XML does not name it, so it is matched: same company, same period of report, a shared reporting owner, filed on or before the amendment, preferring the filing date in `dateOfOriginalSubmission`; the latest match wins. An amendment with no stored match counts on its own, as does one with no non-derivative lines (no owner to match on) |
+| Multi-owner filings | One filing, each transaction line stored once and attributed to the first reporting owner listed (with that owner's officer and director flags). The other owners are not stored |
+| Filings where the company is only a reporting owner | The document's issuer is not the company, but the filing sits in this company's feed too. **Nothing is stored** (found in the end-to-end test: a placeholder row under the shared accession number blocked the real issuer's filing). The call is recorded as skipped with `not_the_issuer` in its error text and the document is fetched again on later runs until it is 90 days old (about 3 per day for the whole universe). A filing already stored by another company is also skipped |
+| Fetch failure versus parse failure | A document that cannot be fetched after three attempts stores nothing and is offered again on the next run; a document that is fetched but unreadable is stored as `failed` and not fetched again. Both are on `source_call`; parse failures also raise the `form4_parse_failures` check (`warn`) |
+| Unsafe XML | A document declaring a DOCTYPE or an ENTITY is refused as a parse failure (no XML library is added) |
 
 **Test plan**
 | ID | Level | Test | Data | Pass condition |
