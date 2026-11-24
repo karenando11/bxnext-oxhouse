@@ -96,6 +96,30 @@ class CompanyPage(models.Model):
     next_event_source = models.CharField(max_length=16, null=True)  # noqa: DJ001
     financing_date = models.DateField(null=True, help_text="Date the cash runway ends.")
 
+    # Company page detail
+    inst_own = models.FloatField(null=True, help_text="Institutional ownership, percent.")
+    scored_at = models.DateTimeField(null=True, help_text="When the score run was scored.")
+    score_components = models.JSONField(help_text="Every intermediate term of every score.")
+    score_input_resolution = models.JSONField(
+        help_text="Runway and catalyst: fresh, carried, expired or missing, with age and reason."
+    )
+    runway_status = models.CharField(max_length=16, null=True)  # noqa: DJ001
+    runway_calc_date = models.DateField(null=True)
+    runway_cash_usd = models.DecimalField(max_digits=22, decimal_places=2, null=True)
+    runway_cash_tag = models.CharField(max_length=128, null=True)  # noqa: DJ001
+    runway_balance_sheet_date = models.DateField(null=True)
+    runway_operating_burn_usd = models.DecimalField(max_digits=22, decimal_places=2, null=True)
+    runway_trial_burn_usd = models.DecimalField(max_digits=22, decimal_places=2, null=True)
+    runway_burn_total_usd = models.DecimalField(max_digits=22, decimal_places=2, null=True)
+    runway_burn_source = models.CharField(max_length=24, null=True)  # noqa: DJ001
+    runway_cap_reason = models.CharField(max_length=16, null=True)  # noqa: DJ001
+    runway_trial_burn_lines = models.JSONField(null=True)
+    catalyst_status = models.CharField(max_length=16, null=True)  # noqa: DJ001
+    catalyst_as_of = models.DateField(null=True)
+    catalyst_candidates = models.JSONField(null=True)
+    catalyst_source_nct = models.CharField(max_length=16, null=True)  # noqa: DJ001
+    catalyst_fallback_end_raw = models.CharField(max_length=16, null=True)  # noqa: DJ001
+
     class Meta:
         managed = False
         db_table = "company_page"
