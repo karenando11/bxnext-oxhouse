@@ -33,6 +33,11 @@ class Study:
     conditions: Sequence[str] = field(default_factory=tuple)
     interventions: Sequence[dict[str, str]] = field(default_factory=tuple)
     title: str = ""
+    study_type: str = ""
+    primary_precision: str = ""  # "day", "month" or ""
+    completion_precision: str = ""
+    primary_raw: str = ""
+    completion_raw: str = ""
 
     @property
     def milestone_date(self) -> date | None:
@@ -50,6 +55,11 @@ class Study:
             conditions=tuple(version.conditions or ()),
             interventions=tuple(version.interventions or ()),
             title=version.title,
+            study_type=version.study_type,
+            primary_precision=version.primary_completion_precision,
+            completion_precision=version.completion_precision,
+            primary_raw=version.primary_completion_raw,
+            completion_raw=version.completion_raw,
         )
 
 

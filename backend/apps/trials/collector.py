@@ -59,15 +59,26 @@ def default_client(delay: float | None = None) -> SecClient:
 
 
 def ensure_aliases(company: Company) -> list[CompanySponsorAlias]:
-    """The active aliases of the company, deriving one from its name when it has none."""
+    """The active aliases of the company, deriving one from its name when it has none.
+
+    A derived alias that no longer equals what the company name gives (the rule changed, or the
+    name did) is switched off and replaced. Manual and SEC aliases are never touched.
+    """
+    wanted = derive_alias(company.name)
+    derived = list(company.sponsor_aliases.filter(source=CompanySponsorAlias.Source.DERIVED))
+    for alias in derived:
+        if alias.active and alias.sponsor_name != wanted:
+            alias.active = False
+            alias.save(update_fields=["active"])
     aliases = list(company.sponsor_aliases.filter(active=True))
     if not aliases:
         alias, _ = CompanySponsorAlias.objects.get_or_create(
-            company=company,
-            sponsor_name=derive_alias(company.name),
-            source=CompanySponsorAlias.Source.DERIVED,
+            company=company, sponsor_name=wanted, source=CompanySponsorAlias.Source.DERIVED
         )
-        aliases = [alias] if alias.active else []
+        if not alias.active:
+            alias.active = True
+            alias.save(update_fields=["active"])
+        aliases = [alias]
     return aliases
 
 

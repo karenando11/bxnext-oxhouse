@@ -147,6 +147,13 @@ def test_manual_override_always_matches() -> None:
 def test_derive_alias_drops_the_company_suffix() -> None:
     assert derive_alias("Apellis Pharmaceuticals, Inc.") == "Apellis Pharmaceuticals"
     assert derive_alias("Inc") == "Inc"
+    assert derive_alias("Structure Therapeutics Inc ADR") == "Structure Therapeutics"
+    assert derive_alias("Argen X SE ADR") == "Argen X"
+    assert derive_alias("Vaxcyte, Inc.") == "Vaxcyte"
+
+
+def test_names_written_with_and_without_a_space_match() -> None:
+    assert similarity("Argen X SE ADR", "argenx SE") == 1.0
 
 
 # --- parsing and filters ---------------------------------------------------------------------
@@ -406,3 +413,20 @@ def test_retries_back_off_then_succeed() -> None:
     )
     result = collect_trials(DAY, client=c)
     assert attempts["n"] == 3 and len(sleeps) == 2 and result.versions_added == 1
+
+
+@pytest.mark.django_db
+def test_a_stale_derived_alias_is_replaced_but_a_manual_one_is_kept() -> None:
+    company = make_company("Structure Therapeutics Inc ADR")
+    old = CompanySponsorAlias.objects.create(
+        company=company, sponsor_name="Structure Therapeutics Inc ADR", source="derived"
+    )
+    assert [a.sponsor_name for a in ensure_aliases(company)] == ["Structure Therapeutics"]
+    old.refresh_from_db()
+    assert old.active is False
+    manual = CompanySponsorAlias.objects.create(
+        company=company, sponsor_name="Other", source="manual"
+    )
+    assert {a.sponsor_name for a in ensure_aliases(company)} == {"Structure Therapeutics", "Other"}
+    manual.refresh_from_db()
+    assert manual.active is True

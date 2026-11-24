@@ -44,7 +44,11 @@ _SUFFIXES = frozenset(
         "the",
         "holdings",
         "holding",
-    }  # fmt: skip
+        "se",
+        "spa",
+        "adr",
+        "ads",
+    }
 )
 _NON_WORD = re.compile(r"[^a-z0-9]+")
 
@@ -170,7 +174,10 @@ def similarity(a: str, b: str) -> float:
     left, right = " ".join(_tokens(a)), " ".join(_tokens(b))
     if not left or not right:
         return 0.0
-    return round(difflib.SequenceMatcher(None, left, right).ratio(), 4)
+    spaced = difflib.SequenceMatcher(None, left, right).ratio()
+    # "Argen X" and "argenx" are the same name written with and without a space.
+    joined = difflib.SequenceMatcher(None, left.replace(" ", ""), right.replace(" ", "")).ratio()
+    return round(max(spaced, joined), 4)
 
 
 def match_sponsor(
@@ -195,7 +202,7 @@ def match_sponsor(
 
 def derive_alias(company_name: str) -> str:
     """The name searched for when a company has no alias: its name without a trailing suffix."""
-    words = company_name.replace(",", " ").split()
+    words = company_name.replace(",", " ").replace(".", "").split()
     while words and _NON_WORD.sub("", words[-1].lower()) in _SUFFIXES:
         words.pop()
     return " ".join(words) or company_name

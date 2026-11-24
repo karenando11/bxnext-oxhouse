@@ -1593,7 +1593,7 @@ Feature: Trial panel values derived from stored studies
 
 ## Step 14: Catalyst derivation
 
-**Depends on:** Step 13 for the integration test. **Size:** M.
+**Status: done** (code in `backend/apps/trials/catalyst.py`, `catalyst_service.py`, command `derive_catalyst`; tests in `backend/tests/test_catalyst.py`). **Depends on:** Step 13 for the integration test. **Size:** M.
 
 ```gherkin
 Feature: Clinical catalyst date
@@ -1642,6 +1642,13 @@ Feature: Clinical catalyst date
 | Tie-break between studies with the same date | Phase 3 first |
 | "Active" definition conflict: the fields file counts NOT_YET_RECRUITING; the XBIT data does not | Excluded, matching the data |
 | Whether the 180-day window applies to all statuses | All statuses |
+| Phase labels stored | `phase_2` and `phase_3`, as the scorer and the golden export use them. A Phase 1/2 study is Phase 2 and a Phase 2/3 study Phase 3 (the collector stores the highest phase) |
+| Active counts | RECRUITING, ACTIVE_NOT_RECRUITING and ENROLLING_BY_INVITATION; NOT_YET_RECRUITING is eligible for the catalyst but not counted as active. Matches the golden export for about 9 in 10 companies |
+| `total_studies`, latest trial, fallback completion | Every stored study; the highest NCT number; the earliest future completion of an active study, else the latest trial's completion. These do not reproduce the golden export (it counts a smaller set of studies: for example ABBV 293 against 423 here) |
+
+**Findings against the golden export (2026-10-12), measured on 2026-11-24 with the studies collected that day**
+- Clinical date and phase match for 889 of 1,040 companies (85.5 percent) across the whole universe. The 79-ticker sample list is not available, so the A14.1 count of 71 of 79 could not be run as such. The 151 differences: 88 with a different date, 26 where no study was found here, 24 where this rule gives a date and the golden none, 12 the other way round, 1 with the same date and a different phase. Study statuses and dates moved in the six weeks between the two days, so some differences are time, not rule.
+- Sponsor matching: after Finviz names ending in "ADR", "ADS" and "SE" were stripped from the derived alias and names with and without a space were treated as equal (Argen X and argenx), 54 of the 608 companies that the golden export has studies for still have none here (91 before).
 
 **Test plan**
 | ID | Level | Test | Data | Pass condition |
