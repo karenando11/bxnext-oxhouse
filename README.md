@@ -4,7 +4,7 @@ An internal research tool for screening and diligence on small-cap healthcare co
 Phase 1 builds the screener: a daily universe from Finviz, scores computed in-house, and a
 screen with a company page.
 
-Status: **Phase 1, Steps 0 to 15** built. Step 9 is backend only (the screener page is the React frontend's job). Step 10 (Finviz ingestion) is tested on synthetic exports only: the first real download, with `FINVIZ_AUTH_TOKEN`, is still to do. Steps 11, 11A and 11B (SEC collectors, FINRA short volume, Form 4 insider activity) are also replayed on real SEC and FINRA responses recorded on 2026-11-20 (not kept in the repository; `scripts/record_fixtures.py` records them again); a multi-owner Form 4 and an unparseable one were missing from those recordings. Step 13 (ClinicalTrials.gov) is tested on synthetic payloads and a live run. Step 13A (trial display values, `apps/trials/display.py`) is pure read-time code, not yet wired into the API. Step 14 (catalyst signal, rule v0) is stored per day; the scorer already reads it. Step 15 (effective-input resolver) is in place: score with `--formula production` to carry values forward. Next: Step 16, pipeline orchestration.
+Status: **Phase 1, Steps 0 to 16 and the Step 18 company-page API** built. Phase 1 has no user interface: the deliverable is the JSON API (`docs/api.md`) that a React frontend, built later, will call. Step 10 (Finviz ingestion) is tested on synthetic exports only: the first real download, with `FINVIZ_AUTH_TOKEN`, is still to do. Steps 11, 11A and 11B (SEC collectors, FINRA short volume, Form 4 insider activity) are also replayed on real SEC and FINRA responses recorded on 2026-11-20 (not kept in the repository; `scripts/record_fixtures.py` records them again); a multi-owner Form 4 and an unparseable one were missing from those recordings. Step 13 (ClinicalTrials.gov) is tested on synthetic payloads and a live run. Step 13A (trial display values, `apps/trials/display.py`) is pure read-time code, not yet wired into the API. Step 14 (catalyst signal, rule v0) is stored per day; the scorer already reads it. Step 15 (effective-input resolver) is in place: score with `--formula production` to carry values forward. Step 16 (the daily batch, `run_batch`) is tested end to end with fake sources and has had one live run. The company page is an API only (`GET /api/company/<ticker>`, in `docs/api.md`); the React page is later work. Next: Step 17, health page and alerts.
 
 ## Repository layout
 
@@ -289,6 +289,8 @@ python manage.py collect_sec                    # tickers to CIKs, new filings, 
 python manage.py collect_sec --ticker KTTA --ticker PACS --date 2026-10-12
 python manage.py collect_trials                  # ClinicalTrials.gov studies by sponsor alias (run before calculate_runway)
 python manage.py collect_trials --ticker KTTA --ticker APLM
+python manage.py run_batch                       # the whole daily batch (06:00 US Eastern, Mon to Fri); see docs for the crontab
+python manage.py run_batch --dry-run --fixtures DIR   # no network: answers come from recorded files
 python manage.py derive_catalyst                 # clinical catalyst date, phase and trial counts (after collect_trials and calculate_runway)
 python manage.py calculate_runway                # runway for every company from the stored facts (run after collect_sec)
 python manage.py calculate_runway --date 2026-10-14 --ticker KTTA

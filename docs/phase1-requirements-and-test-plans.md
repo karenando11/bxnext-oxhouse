@@ -13,7 +13,7 @@ This document turns the 24 Phase 1 steps (0 to 20, plus 11A, 11B and 13A) into G
 - **Open items:** questions or data we still need, each with the **default assumption** the build will use if unanswered.
 - **Test plan:** a table of tests (`T<step>.<n>`) with level, data, and pass condition.
 
-Test levels: **Unit** (pure code, no database, no network), **Integration** (database, no network), **Contract** (recorded responses from external sources), **E2E** (whole batch or browser), **Manual**.
+Test levels: **Unit** (pure code, no database, no network), **Integration** (database, no network), **Contract** (recorded responses from external sources), **E2E** (the whole batch), **Manual**.
 
 ---
 
@@ -29,7 +29,7 @@ Test levels: **Unit** (pure code, no database, no network), **Integration** (dat
 | F6 | Raw Finviz Elite CSV (view 151, `f=sec_healthcare`) | One unprocessed download | **To obtain** |
 | F7 | Recorded SEC responses | `company_tickers.json`, `submissions`, `companyfacts` for KTTA, PACS, an IFRS filer (for example BNTX), a non-USD filer, a ticker with no CIK, a 10-K/A filer | **Recorded 2026-11-20** from the developer machine (the SEC did not block it): `company_tickers.json`, and submissions and companyfacts for KTTA, RZLT, XBIT, YDES, APLM, SMMT, PACS, ALPS and BNTX; INDV has no CIK. Covers a US filer, an IFRS filer in USD (APLM), a euro filer (BNTX), a filer with no XBRL facts (ALPS), a ticker with no CIK and 10-K/A, 10-Q/A, 20-F/A and 6-K/A filers. The files were removed from the repository afterwards (raw files are not to be kept locally); re-record with `scripts/record_fixtures.py` |
 | F8 | `company_info_fields.xlsx` | Field list, sources, derivations, display formats | Available |
-| F9 | ABEO research report (PDF) | Page layout and tile values | Available |
+| F9 | ABEO research report (PDF) | Tile values and the data points the company-page API must serve | Available |
 | F10 | Finviz column map | Internal key to Finviz header mapping (reference workbook, sheet "Finviz Column Map") | Available |
 | F11 | Recorded FINRA short-volume files | Three consecutive trading days, a weekend date (no file), and a day with a universe ticker missing | **Recorded 2026-11-20**: three consecutive trading days (17 to 19 November 2026) and a Sunday, which FINRA answers with 403. The files were removed afterwards; re-record with the script. The "universe ticker missing" case needs no recording |
 | F12 | Recorded Form 4 XML documents | An officer purchase, a sale under a 10b5-1 plan, a sale not under a plan, a multi-owner filing, a gift (code G), an amendment (4/A), and one that fails to parse | **Recorded 2026-11-20, partly**: 246 documents from RZLT, SMMT, XBIT, PACS, KTTA and APLM cover a purchase, planned and unplanned sales, gifts, option exercises, derivative-only filings and eleven 4/A amendments. **Still missing**: a multi-owner filing (none of the 246 has two reporting owners) and an unparseable document (the synthetic ones stand in). The files were removed afterwards; re-record with the script |
@@ -96,6 +96,12 @@ Feature: Cross-cutting engineering rules
     And deep collection of other sources applies only to the coverage list of about 80 companies
     And any field that cannot be filled carries a reason code
 
+  Scenario: No user interface in Phase 1
+    Given the product is used through a React frontend that is built later
+    Then Phase 1 delivers the JSON API and no browser pages
+    And every value a screen will show is served by the API, formatted where the report formats it
+    And every endpoint requires sign-in and answers JSON, including its errors
+
   Scenario: API reads only the read model
     Given the API serves the screener table, the company page and the CSV export
     Then each reads only from the company_page read model
@@ -103,7 +109,7 @@ Feature: Cross-cutting engineering rules
     And each page field is defined in exactly one place
 ```
 
-Global acceptance criteria: **G1** ruff and unit tests pass in CI on every change. **G2** coverage of the scoring package is at least 90%. **G3** no secret appears in the repository or logs. **G4** every external call is recorded in `source_call`. **G5** all 55 page fields are collected or derived for every universe company each day (Appendix B). **G6** the API reads only the `company_page` read model, never the base tables. The Django project lives in `backend/`; test paths below are relative to it.
+Global acceptance criteria: **G1** ruff and unit tests pass in CI on every change. **G2** coverage of the scoring package is at least 90%. **G3** no secret appears in the repository or logs. **G4** every external call is recorded in `source_call`. **G5** all 55 page fields are collected or derived for every universe company each day (Appendix B). **G6** the API reads only the `company_page` read model, never the base tables (the read-time trial lists also read `ct_study_version`). **G7** Phase 1 has no user interface; the deliverable is the API, documented in `docs/api.md`. The Django project lives in `backend/`; test paths below are relative to it.
 
 ---
 
@@ -661,7 +667,7 @@ Feature: Load a golden day into the database
 
   Scenario: Fixture data is never mistaken for production
     Then every loaded row is traceable to the fixture source_call
-    And the application shows a visible "fixture data" banner when the latest run is a fixture run
+    And the API marks its responses as fixture data (`is_fixture`) when the latest run is a fixture run
 
   Scenario: Missing values
     Given a blank value in the export
@@ -677,7 +683,7 @@ Feature: Load a golden day into the database
 - A6.1 1,053 companies and snapshots load.
 - A6.2 Reading back the loaded values equals the file for every mapped column.
 - A6.3 Re-running changes nothing.
-- A6.4 Fixture rows are marked and the UI warns. Until the screens exist, `/healthz` reports `data_source` as `fixture`, `live` or `none`, and the `company_page` view carries `is_fixture`.
+- A6.4 Fixture rows are marked and the API says so: `/healthz` reports `data_source` as `fixture`, `live` or `none`, and the `company_page` view carries `is_fixture`, which the screener and company-page responses return.
 - A6.5 Every page field the export cannot supply is NULL with reason `fixture_not_available`.
 
 **Open items**
@@ -846,60 +852,64 @@ Feature: Screening and the funnel
 
 ---
 
-## Step 9: Screener UI
+## Step 9: Screener API
 
-**Status: backend done; browser page pending.** The backend of this step is a JSON API (`backend/apps/web/`, documented in `docs/api.md`; tests in `backend/tests/test_screener_api.py`), because the user interface will be the React frontend. The browser page itself (the table, sliders, drawer and banner, T9.6 and T9.7) is frontend work. **Depends on:** Step 8. **Size:** M.
+**Status: done** (code in `backend/apps/web/`, documented in `docs/api.md`; tests in `backend/tests/test_screener_api.py`). Phase 1 has no user interface: this step delivers the JSON endpoints a React frontend, built later, will call. **Depends on:** Step 8. **Size:** M.
 
 ```gherkin
-Feature: Screener page
+Feature: Screener API
 
-  Scenario: Default view
-    Given a user is signed in
-    When they open the screener
+  Scenario: Default response
+    Given a signed-in client
+    When it requests the screener
     Then the default filters are applied
-    And the table shows the passing companies ranked by composite with ticker, company,
+    And the response lists the passing companies ranked by composite with ticker, company,
         industry, market cap, price, composite, Cash Health, Milestone, Outlier, peer group, next catalyst and runway
+    And it carries the filters used, the counts and the freshness of the data
 
-  Scenario: Live counts
-    When the user moves any filter
-    Then the count and table update within 500 milliseconds without a full page reload
+  Scenario: Filters as parameters
+    When the client sends any filter as a query parameter
+    Then the response is recomputed from the read model in memory within 500 milliseconds
+    And an invalid value is rejected with an error naming the parameter
 
   Scenario: Why excluded
-    Given the user searches for an excluded ticker
-    Then the page lists every filter it failed with the actual value and the threshold
+    Given the client asks about an excluded ticker
+    Then the response lists every filter it failed with the actual value and the threshold
 
   Scenario: Saved screens
-    When the user saves the current filters under a name
-    Then they can reload it later
+    When the client saves the current filters under a name
+    Then it can list and load the screen later
 
   Scenario: Funnel and near the line
-    Then the user can open a funnel log showing who entered and left, and a near-the-line list
+    Then the client can request a funnel log showing who entered and left, and a near-the-line list
+
+  Scenario: CSV export
+    Then the same rows can be downloaded as CSV
 
   Scenario: Data freshness
     Given the latest score run is more than 3 days old
-    Then a banner states the age
+    Then the response marks the data stale and carries a message stating the age
 
   Scenario: Authentication
-    Given an anonymous visitor
-    Then every page redirects to sign-in
+    Given an anonymous client
+    Then every endpoint answers 401 with the sign-in URL
 ```
 
 **Acceptance criteria**
-- A9.1 On the golden day the default view shows 139 companies.
-- A9.2 Filter changes update through partial page updates in under 500 ms on the golden day.
+- A9.1 On the golden day the default response lists 139 companies.
+- A9.2 A filter change returns in under 500 ms on the golden day.
 - A9.3 Why-excluded works for any ticker in the universe.
 - A9.4 Saved screens persist.
-- A9.5 All pages require sign-in.
-- A9.6 Table export to CSV is available (nice to have, confirm).
+- A9.5 All endpoints require sign-in.
+- A9.6 The CSV export is available.
 - A9.7 The table and the CSV export read only the `company_page` read model.
 
 **Open items**
 | Item | Default |
 |---|---|
-| Table library | Chosen with the React frontend. The backend serves JSON, not HTMX partials |
-| Anonymous requests | The API answers 401 with the sign-in URL instead of redirecting; the frontend sends the user to its sign-in screen |
+| Anonymous requests | The API answers 401 with the sign-in URL; the frontend sends the user to its sign-in screen |
 | Sign-in | Session cookie with CSRF protection; no rate limit on login attempts yet |
-| Freshness | The banner text comes from the API (`stale_banner`), using the `stale.snapshot_days` setting (default 3) |
+| Freshness | The message comes from the API (`stale_banner`), using the `stale.snapshot_days` setting (default 3) |
 | Golden-day count | 139 rows needs the stored composite, because the golden export has `eps_this` blank (see Step 8) |
 | Saved screens per user or shared | Shared, with owner recorded |
 | CSV export | Include |
@@ -908,12 +918,10 @@ Feature: Screener page
 | ID | Level | Test | Pass condition |
 |---|---|---|---|
 | T9.1 | Integration | Client request with default filters | 139 rows |
-| T9.2 | Integration | Partial endpoint for each filter change | Correct counts, under 500 ms |
+| T9.2 | Integration | Request for each filter change | Correct counts, under 500 ms |
 | T9.3 | Integration | Why-excluded for 5 sample tickers | Reasons and values correct |
 | T9.4 | Integration | Save and reload a screen | Equal filters |
-| T9.5 | Integration | Anonymous access | 401 with the sign-in URL on every endpoint (the API form of "redirect") |
-| T9.6 | E2E | Browser test of slider, table and drawer | Passes (frontend, pending) |
-| T9.7 | Manual | Usability checklist with two users | Signed off |
+| T9.5 | Integration | Anonymous access | 401 with the sign-in URL on every endpoint |
 
 ---
 
@@ -1175,7 +1183,7 @@ Feature: FINRA Reg SHO daily short volume
 - A11A.4 Reloading a date creates no duplicates.
 - A11A.5 A failure here never blocks scoring.
 - A11A.6 The first run fetches 45 calendar days of files.
-- A11A.7 The page label says "short volume, not short interest".
+- A11A.7 The API's short-selling block carries the label "short volume, not short interest".
 - A11A.8 The metric view returns the same results as the formulas for any past date.
 
 **Open items**
@@ -1524,9 +1532,9 @@ Feature: ClinicalTrials.gov collection
 
 ---
 
-## Step 13A: Trial display derivations
+## Step 13A: Trial display derivations (served by the API)
 
-**Status: done** (code in `backend/apps/trials/display.py`, tests in `backend/tests/test_trial_display.py`; not yet attached to the API, which is the API layer's job). **Depends on:** Step 13 (stored study versions). **Size:** S. Pure read-time functions; nothing is stored.
+**Status: done** (code in `backend/apps/trials/display.py`, tests in `backend/tests/test_trial_display.py`; served by the company-page API of Step 18). **Depends on:** Step 13 (stored study versions). **Size:** S. Pure read-time functions; nothing is stored.
 
 ```gherkin
 Feature: Trial panel values derived from stored studies
@@ -1725,7 +1733,7 @@ Feature: Choosing the inputs the scorer sees
 
 ## Step 16: Pipeline orchestration
 
-**Depends on:** Steps 10 to 15, 11A and 11B. **Size:** L.
+**Status: done** (code in `backend/apps/platform/batch.py`, `calendar.py`, `alerts.py`, command `run_batch`; tests in `backend/tests/test_batch.py` and `test_calendar.py`). **Depends on:** Steps 10 to 15, 11A and 11B. **Size:** L.
 
 ```gherkin
 Feature: The daily batch
@@ -1771,9 +1779,9 @@ Feature: The daily batch
   Scenario: Read model is refreshed last and only after a good score run
     Given the score run completed
     Then the read model is refreshed as the final step, in one atomic refresh
-    And readers see either the previous day's complete page or the new one, never a mix
+    And API clients see either the previous day's complete data or the new one, never a mix
     But given scoring was skipped or failed
-    Then the read model keeps the previous day's page, which shows its age
+    Then the read model keeps the previous day's data, and the API reports its age
 
   Scenario: Finviz failure
     Given the Finviz download fails after its retries
@@ -1833,13 +1841,21 @@ Feature: The daily batch
 | Item | Default |
 |---|---|
 | Start time | 06:00 US Eastern, Monday to Friday; the finish target is 07:00 |
-| Time budget | 60 minutes for a normal day, to confirm after measuring. The first run and any backfill (45 days of FINRA, 90 days of Form 4) are exempt |
+| Time budget | 60 minutes for a normal day, to confirm after measuring. The first run and any backfill (45 days of FINRA, 90 days of Form 4) are exempt. **Measured once, live, on a development machine (24 November, 1,054 companies, incremental data):** about 16 minutes in all: ClinicalTrials.gov 744 s (one query per sponsor alias, 0.5 s apart, plus pages: the longest step), SEC with Form 4 165 s, FINRA 0.3 s, Finviz 1 s, runway 2 s, scoring, screen and read model under 1 s together. Well inside the budget; the trials step is the one that grows with the universe |
 | How the batch knows the market was closed | A market-holiday list in settings (default: the NYSE calendar, kept up to date by the engineer). Without it the batch compares the market date with the latest scored one |
 | What Finviz returns at 06:00 | Assumed to be the previous close, so the same prices as the old system's 16:30 snapshot. To verify with the first real download (Step 10) |
 | Finviz fails | Collect the other sources, skip scoring, alert, and leave yesterday's page up with its age |
 | Weekend runs | None; Monday's batch catches up. Sources are fetched incrementally, so nothing is lost |
 | Which Finviz columns count as scoring inputs for the blank-column rule | All the inputs of the scores (quick ratio, cash per share, price, debt to equity, P/Cash, `eps_next`, relative volume, earnings date, market cap and the seven peer dimensions). `eps_this` is included once real data has it |
-| Refresh method for the read model | A PostgreSQL materialised view refreshed concurrently, or a table rebuilt in one transaction; the choice is the engineer's |
+| Refresh method for the read model | `company_page` is a plain view over the latest completed score run, so it needs no refresh. The batch scores, runs the default screen and checks that the view serves every scored company inside one transaction; readers see the previous page or the new one, never a mix. A failure rolls the transaction back |
+| First live run | Found a bug the fake-source tests could not: the read-model check expected the new score run to be the page's latest, but a run for a later market date was already served. The check now verifies whichever run the view serves and records `serves_new_run`. The same run also showed the resume path on live data (SEC had failed for a missing contact address; the re-run skipped every finished step, ran SEC, then published) |
+| The twelve steps | Recorded as `finviz`, `sec` (CIKs, submissions, facts and Form 4 documents, one collector with its own sub-steps listed in the step detail), `finra`, `trials`, `runway`, `catalyst`, `metrics` (insider and short-volume views, read as of the market date), `resolve_inputs`, `score`, `screen`, `read_model` |
+| Alerts | The batch sends through `AlertSink`; the default writes to the error log. Step 17 plugs email in. Sent: Finviz failed, scoring failed, publish rolled back, still running at the deadline |
+| Scheduling | The timer is outside the code: a crontab line `CRON_TZ=America/New_York` and `0 6 * * 1-5 python manage.py run_batch --schedule`. Settings `schedule.batch_start_et` (06:00), `schedule.batch_deadline_et` (07:00), `batch.formula` (production) and `market_holidays` (extra closed dates) |
+| Which batch resumes | The latest batch for the same run date that is failed, partial or still marked running; steps recorded ok are not repeated. A run that finished ok is followed by a fresh full run (the same scores) |
+| No new market day | An earlier run date's batch already scored that market date (a Monday holiday followed by Tuesday). The batch collects, records `market` skipped, scores nothing and sends no alert |
+| Overrun alert | A thread in the batch process waits for the deadline and sends once, naming the current step. A batch started after the deadline does not alert |
+| Blank-column rule | Only the Finviz scoring inputs stop scoring (price, market cap, quick ratio, cash per share, debt to equity, P/Cash, `eps_next`, relative volume, earnings date and the seven peer dimensions). A failed row-count check stops it too. Any other failed check marks the run partial |
 
 **Test plan**
 | ID | Level | Test | Pass condition |
@@ -1858,16 +1874,18 @@ Feature: The daily batch
 
 ---
 
-## Step 17: Health page and alerts
+## Step 17: Pipeline health API and alerts
 
 **Depends on:** Step 16. **Size:** S.
 
 ```gherkin
 Feature: Pipeline health
 
-  Scenario: Health page
-    Then it shows the last batch run with its steps, last success per source, quality-check results,
-         counts of carried and null inputs, and run history
+  Scenario: Health endpoint
+    Given a signed-in client
+    When it requests the pipeline health
+    Then the response gives the last batch run with its steps, the last success per source,
+         the quality-check results, counts of carried and null inputs, and the run history
 
   Scenario Outline: Alerts
     Given <condition>
@@ -1888,42 +1906,45 @@ Feature: Pipeline health
 ```
 
 **Acceptance criteria**
-- A17.1 Seeded failures appear on the page.
+- A17.1 Seeded failures appear in the health response.
 - A17.2 Each alert condition sends exactly one email.
 - A17.3 Recovery clears the alert state.
+- A17.4 The health endpoint requires sign-in.
 
 **Open items**
 | Item | Default |
 |---|---|
 | Alert channel and recipients | Email to the team |
 | Mail provider | A low-cost transactional mail service |
+| Alert delivery | The batch already sends through an alert sink that writes to the error log (Step 16); this step plugs email in |
 
 **Test plan**
 | ID | Level | Test | Pass condition |
 |---|---|---|---|
-| T17.1 | Integration | Seeded failures on the page | Shown |
+| T17.1 | Integration | Seeded failures in the health response | Shown |
 | T17.2 | Integration | Each alert condition | One email |
 | T17.3 | Integration | Persisting condition | No repeat |
 | T17.4 | Integration | Recovery then recurrence | Email again |
 | T17.5 | Integration | Form 4 failure threshold and a missing FINRA trading-day file | One email each |
+| T17.6 | Integration | Anonymous request to the health endpoint | 401 |
 
 ---
 
-## Step 18: Company page
+## Step 18: Company page API
 
-**Depends on:** Step 7, and Steps 11A and 11B for the two new panels (fixtures suffice). **Size:** M.
+**Status: done** (`GET /api/company/<ticker>`; code in `backend/apps/web/company_api.py`, `company_page.py`, `format.py`; documented in `docs/api.md`; tests in `backend/tests/test_company_api.py`). Phase 1 has no user interface: the endpoint returns every data point the company page needs, so a React frontend built later only has to draw it. **Depends on:** Step 7, and Steps 11A and 11B for the short-volume and insider blocks (fixtures suffice). **Size:** M.
 
 ```gherkin
-Feature: Company page
+Feature: Company page API
 
   Scenario: Header and chart
-    When a user opens /company/ABEO
-    Then the page shows the ticker, company, industry, peer group and data date
-    And a TradingView chart widget for the symbol
+    When a signed-in client requests /api/company/ABEO
+    Then the response gives the ticker, company, industry, peer group and data date
+    And a chart descriptor naming the TradingView symbol, for the frontend to embed
 
   Scenario Outline: Metric tiles
     Given the latest snapshot
-    Then the tile <tile> displays <display>
+    Then the tile <tile> carries the value and the display string <display>
     Examples:
       | tile | display |
       | Price | $5.39 |
@@ -1935,11 +1956,11 @@ Feature: Company page
       | Earnings date | 8/13/2026 8:30:00 AM |
 
   Scenario: Unavailable tiles
-    Then the fair value, bear/bull and upside tiles show "not yet available"
+    Then the fair value, bear/bull and upside tiles are returned as "not yet available"
 
   Scenario Outline: Display formats
     Given a stored value <value> for <field>
-    Then it displays as <display>
+    Then its display string is <display>
     Examples:
       | field | value | display |
       | Market cap | 307.94 | $308M |
@@ -1951,38 +1972,40 @@ Feature: Company page
       | Avg vol | 842.3 | 842K |
 
   Scenario: Scores
-    Then the composite and its five components are shown, each expandable to its components
+    Then the response gives the composite and its five components, each with the components behind it
 
-  Scenario: Runway panel
-    Then it shows cash, operating burn, trial burn, burn source, balance-sheet date, runway and the cap flag
+  Scenario: Runway
+    Then it gives cash, operating burn, trial burn, burn source, balance-sheet date, runway,
+         quarters, rating and the cap flag
+    And a capped runway is labelled "360+" and a cash-flow-positive company is labelled "cash-flow positive"
 
-  Scenario: Catalyst panel
-    Then it shows the chosen date, phase, overdue flag and the list of considered studies
+  Scenario: Catalyst
+    Then it gives the chosen date, phase, overdue flag and the list of considered studies
 
-  Scenario: Short-selling panel
-    Then it shows the latest short-volume ratio as a percentage, the trend, and the change in percentage points
-    And it is labelled "short volume, not short interest"
+  Scenario: Short selling
+    Then it gives the latest short-volume ratio, the trend, and the change in percentage points
+    And it carries the label "short volume, not short interest"
 
-  Scenario: Insider activity panel
-    Then it shows Form 4 filings in 90 days, open-market buys and sales,
+  Scenario: Insider activity
+    Then it gives Form 4 filings in 90 days, open-market buys and sales,
          officers and directors buying and selling, and the share of sale dollars under 10b5-1
 
-  Scenario: Trial panel
-    Then it shows total studies, active Phase 2 and Phase 3, the latest trial and its status,
-         the next-milestone card, the pipeline list with phase chips, indications and upcoming completions
+  Scenario: Trials
+    Then it gives total studies, active Phase 2 and Phase 3, the latest trial and its status,
+         the next-milestone card, the pipeline with phase chips, indications and upcoming completions
 
   Scenario: Read model only
     Given the company page is requested
     Then the data comes from one read of the company_page view plus the read-time trial derivations
-    And the page does not join base tables
+    And no base table is queried
 
-  Scenario: Every page field is populated or explained
+  Scenario: Every field is populated or explained
     Given any company in the universe
-    Then each of the 55 page fields shows a value or a reason for its absence
+    Then each of the 55 fields has a value or a reason for its absence
 
-  Scenario Outline: Stale banners
+  Scenario Outline: Stale-data banners
     Given <condition>
-    Then the page shows a banner "<message>"
+    Then the response lists a banner with the message "<message>"
     Examples:
       | condition | message |
       | earnings date earlier than today | Earnings date has passed |
@@ -1993,43 +2016,51 @@ Feature: Company page
       | latest short-volume date older than 5 trading days | Short-volume data is stale |
       | insider metrics older than 7 days | Insider data is stale |
 
-  Scenario: Vintage footer
+  Scenario: Vintage
     Then each block lists its as-of date and source
 
   Scenario: Unknown ticker
-    Then the page returns 404
+    Then the endpoint answers 404
+
+  Scenario: Authentication
+    Given an anonymous client
+    Then the endpoint answers 401 with the sign-in URL
 ```
 
 **Acceptance criteria**
-- A18.1 Tile values and formats equal the specified displays for the ABEO fixture.
-- A18.2 Every stale condition shows its banner.
-- A18.3 Each block shows a vintage.
-- A18.4 Page renders in under 500 ms on the golden day.
+- A18.1 Tile values and display strings equal the specified displays for the ABEO fixture.
+- A18.2 Every stale condition produces its banner.
+- A18.3 Each block carries a vintage.
+- A18.4 The response is returned in under 500 ms on the golden day.
 - A18.5 Sign-in is required.
-- A18.6 For every company in the golden universe, each of the 55 page fields has a value or a reason.
-- A18.7 The page issues no query against a base table; its data comes from `company_page` and `ct_study_version` only.
+- A18.6 For every company in the golden universe, each of the 55 fields has a value or a reason.
+- A18.7 The endpoint issues no query against a base table; its data comes from `company_page` and `ct_study_version` only.
 
 **Open items**
 | Item | Default |
 |---|---|
 | ABEO fixture values come from the report (price as of 2026-09-16) | Used as a display-format fixture only |
-| The ABEO report shows market cap unrounded ($307.94M); the page rule is "$xM / $x.xB" | The page rule wins; confirm |
+| The ABEO report shows market cap unrounded ($307.94M); the display rule is "$xM / $x.xB" | The display rule wins; confirm |
 | Signed percentages: two decimals assumed | Confirm |
-| Average volume is stored in thousands; displayed with a K suffix | Confirm |
-| PDF export of the page | Later |
+| Average volume is stored in thousands; its display string has a K suffix | Confirm |
 | Fair value tiles | Placeholders until the valuation phase |
-| Stale-banner age counted in calendar days | With a Monday to Friday batch, a long weekend or a market holiday shows a false "stale" banner (a Monday after a Friday holiday is 4 days from the market date). Default: count weekdays and market holidays out, so age is in trading days. Same change for the Step 9 banner, which is built on calendar days today |
+| Response assembly | A pure function of one `company_page` row, the stored studies and a `today` value (`build_page`). The read model gained columns (migration web 0005): institutional ownership, runway detail, catalyst candidates, score components and the input resolution |
+| Banner ages | Market data counts trading days (a long weekend or holiday is not stale); the cash limit (120 days) counts calendar days; short-volume and insider staleness are the view's own flags. The Step 9 screener message still counts calendar days |
+| Extra reasons | Three reason strings the API adds for values no collector stores: `not_reported`, `no_open_market_sales`, `not_available` |
+| Institutional ownership | The tile in the report is institutional *ownership*; field 31 of the list is institutional *transactions*. Both are served |
+| Trial list size | `pipeline.studies` lists every stored study (a large company has several hundred), so a response can be about 100 KB |
+| Check on live data | 1,054 of 1,054 companies have all 55 fields valued or explained; first response 129 ms (below the 500 ms target) |
 
 **Test plan**
 | ID | Level | Test | Data | Pass condition |
 |---|---|---|---|---|
-| T18.1 | Unit | Block assembler for each stale trigger | synthetic dates | Banner present or absent |
-| T18.2 | Unit | Tile and field formatting | tables above | Exact strings |
-| T18.3 | Integration | Page render for a fixture company | golden day | All blocks present |
-| T18.4 | Integration | 404 and sign-in | none | As specified |
-| T18.5 | Manual | Side-by-side with the report layout | F9 | Product owner signs off |
+| T18.1 | Unit | Banner assembly for each stale trigger | synthetic dates | Banner present or absent |
+| T18.2 | Unit | Display-string formatting | tables above | Exact strings |
+| T18.3 | Integration | Response for a fixture company | golden day | All blocks present, each with a vintage |
+| T18.4 | Integration | 404 and 401 | none | As specified |
+| T18.5 | Integration | ABEO fixture values against the report | F9 | Tile values and strings equal the report's |
 | T18.6 | Integration | Field coverage: for each company, every one of the 55 fields has a value or a reason | golden day and fixtures | 55 of 55 for every company |
-| T18.7 | Integration | Count queries per page render and which relations they touch | golden day | Only `company_page` and `ct_study_version` |
+| T18.7 | Integration | Count queries per request and which relations they touch | golden day | Only `company_page` and `ct_study_version` |
 
 ---
 
@@ -2192,7 +2223,7 @@ all ─ 20
 ```
 
 Steps 1 to 4 (scoring core) can start on day one in parallel with Steps 0 and 5. After Step 5, Steps 10, 11, 11A and 13 are independent of each other. Step 11B needs Step 11 (the SEC client and the shared rate limiter).
-Step 13A needs only stored studies from Step 13 and feeds the trial panel in Step 18.
+Step 13A needs only stored studies from Step 13 and feeds the trials block of the company-page API in Step 18.
 
 ---
 

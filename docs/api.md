@@ -59,3 +59,34 @@ Shared with all users; the owner is recorded. A name is unique per owner.
 | `/api/screens/` | POST | Body `{"name", "filters"}`. Filters are validated; unknown keys give 400. Returns 201. |
 | `/api/screens/<id>` | GET | One screen. |
 | `/api/screens/<id>` | DELETE | Owner only. The default screen cannot be deleted. |
+
+## Company page
+
+`GET /api/company/<ticker>` returns everything the company page shows, in one response. The ticker
+is case-insensitive. **404** `unknown_ticker` when no company page exists for it; **401** when not
+signed in. The response is never cached. It is built from one read of the `company_page` read model
+(the latest completed score run) plus the trial lists derived from the stored studies; nothing
+else is queried.
+
+Every number comes as a raw `value`; where the page shows it formatted there is also a `display`
+string (`"$5.39"`, `"$308M"`, `"-29.61%"`). Scores carry `display` rounded half up to one decimal.
+A value that is missing is `null`, and its reason is in `fields` (see below).
+
+| Key | Content |
+|---|---|
+| `ticker`, `company`, `as_of_date`, `today`, `is_fixture` | Identity and the date the page describes. `is_fixture` is true when the data came from a fixture load, not a live collection. |
+| `header` | Ticker, company, industry, `peer_group` (`mcap_bucket`, `key`, `peer_count`, `is_sparse`), `as_of_date`, `market_data_as_of`. |
+| `chart` | `{"provider": "tradingview", "symbol": "<ticker>"}`. The frontend embeds the widget; nothing is stored. |
+| `banners` | The stale-data banners that apply: a list of `{code, message, block}`. Codes: `earnings_passed` ("Earnings date has passed"), `catalyst_passed`, `cash_stale` (balance sheet over 120 days old), `carried_input` ("Using data from N days ago"), `market_stale` (snapshot over 3 trading days old), `short_volume_stale`, `insider_stale`, `fixture`. Market-data age counts trading days, so a long weekend or a holiday does not raise a false banner. |
+| `tiles` | `price`, `market_cap`, `vs_52w_high`, `vs_200d_ma`, `short_float`, `inst_ownership`, `cash_per_share`, `earnings_date`, and the placeholders `fair_value`, `bear_case`, `bull_case`, `upside` (`{"status": "not_yet_available"}`). |
+| `momentum` | `rsi_14`, `avg_volume_k`, `rel_volume`, `perf_week`, `perf_month`, `perf_quarter`, `perf_ytd`. |
+| `balance_sheet` | `cash_per_share`, `quick_ratio`, `debt_to_equity`, `gross_margin`, `op_margin`. |
+| `ownership` | `short_float`, `inst_ownership`, `inst_transactions`, `insider_ownership`. |
+| `scores` | `composite` (Cash + Cat. Score), `spring`, `setup`, `timing`, `outlier`, each `{label, value, display}`; `recency` (`shown: false`); `components` (every intermediate term, to expand a score); `carried_inputs`, `missing_inputs`, `input_resolution` (runway and catalyst: `state` fresh, carried, expired or missing, `age_days`, `reason`); `scored_at`. |
+| `runway` | `months`, `months_label` (`"360+"` when capped), `quarters`, `rating` (Critical, Short, Moderate, Long), `label` (`"cash-flow positive"` when the company is, in which case quarters and rating are null), `capped`, `cap_reason`, `cash_usd`, `cash_source_tags`, `operating_burn_monthly_usd`, `trial_burn_monthly_usd`, `burn_total_monthly_usd`, `trial_burn_lines` (per phase: count, rate, amount), `burn_source`, `balance_sheet_date`, `calc_date`, `financing_date`, `status`, `reasons`, `resolution`. |
+| `catalyst` | `clinical_date`, `phase`, `overdue`, `source_nct`, `next_event_source` (clinical, financing or none), `financing_date`, `fallback_completion`, `candidates` (every study considered, with `eligible`, `reject_reason`, `chosen`), `status`, `as_of_date`, `reasons`, `resolution`. |
+| `trials` | `total_studies`, `active_phase_3`, `active_phase_2`, `latest_trial`, `latest_status`, `next_milestone` (card: study, phase, date, `quarters_out`, `drug`), `pipeline` (`total`, `phase_chips`, `studies`), `indications` (not de-duplicated), `upcoming_completions`, `reasons` (`no_trials` for a company with no studies). |
+| `short_selling` | `label` (`"short volume, not short interest"`), `latest_ratio`, `trend`, `delta_vs_30d_pts`, `latest_trade_date`, `age_days`, `is_stale`, `reasons`. |
+| `insider` | `filings_90d`, `open_market_buys`, `open_market_sales`, `officers_directors_buying`, `officers_directors_selling`, `pct_sale_dollars_under_10b5_1`, `age_days`, `is_stale`, `reasons`. |
+| `vintage` | The footer: for each block its `as_of` date, its `source` and where relevant `age_days`, `balance_sheet_date` or `produced_at`. |
+| `fields` | All 55 fields of the company-page field list, keyed by name, each `{n, label, value, reason}`. `value` is set or `reason` is: a reason code such as `non_usd_only`, `cash_missing`, `no_trials`, `not_in_finra_file`, `company_cash_positive`, `fixture_not_available`, or one of three the API adds for values no collector stores: `not_reported` (the source left it blank), `no_open_market_sales` (no sales in the window, so no 10b5-1 share) and `not_available`. A consumer can render any field from here without knowing which block holds it. |
