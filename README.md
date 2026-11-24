@@ -4,7 +4,7 @@ An internal research tool for screening and diligence on small-cap healthcare co
 Phase 1 builds the screener: a daily universe from Finviz, scores computed in-house, and a
 screen with a company page.
 
-Status: **Phase 1, Steps 0 to 12** built. Step 9 is backend only (the screener page is the React frontend's job). Step 10 (Finviz ingestion) is tested on synthetic exports only: the first real download, with `FINVIZ_AUTH_TOKEN`, is still to do. Steps 11, 11A and 11B (SEC collectors, FINRA short volume, Form 4 insider activity) are also replayed on real SEC and FINRA responses recorded on 2026-11-20 (not kept in the repository; `scripts/record_fixtures.py` records them again); a multi-owner Form 4 and an unparseable one were missing from those recordings. Step 12 (runway calculator) has no trial burn until Step 13 collects ClinicalTrials.gov studies. Next: Step 13.
+Status: **Phase 1, Steps 0 to 13** built. Step 9 is backend only (the screener page is the React frontend's job). Step 10 (Finviz ingestion) is tested on synthetic exports only: the first real download, with `FINVIZ_AUTH_TOKEN`, is still to do. Steps 11, 11A and 11B (SEC collectors, FINRA short volume, Form 4 insider activity) are also replayed on real SEC and FINRA responses recorded on 2026-11-20 (not kept in the repository; `scripts/record_fixtures.py` records them again); a multi-owner Form 4 and an unparseable one were missing from those recordings. Step 13 (ClinicalTrials.gov) is tested on synthetic payloads and a live run. Next: Step 13A, trial display derivations, then Step 14.
 
 ## Repository layout
 
@@ -287,6 +287,8 @@ Files are saved exactly as received with a `manifest.json`. Nothing is kept in t
 export SEC_USER_AGENT="Your Team research@example.com"   # a name and a contact address; the SEC asks for both
 python manage.py collect_sec                    # tickers to CIKs, new filings, facts refresh for today
 python manage.py collect_sec --ticker KTTA --ticker PACS --date 2026-10-12
+python manage.py collect_trials                  # ClinicalTrials.gov studies by sponsor alias (run before calculate_runway)
+python manage.py collect_trials --ticker KTTA --ticker APLM
 python manage.py calculate_runway                # runway for every company from the stored facts (run after collect_sec)
 python manage.py calculate_runway --date 2026-10-14 --ticker KTTA
 ```

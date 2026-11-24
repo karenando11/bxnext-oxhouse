@@ -1453,7 +1453,7 @@ Feature: Runway
 
 ## Step 13: ClinicalTrials.gov collector
 
-**Depends on:** Step 5. **Size:** M.
+**Status: done** (code in `backend/apps/trials/ctgov.py` and `collector.py`, command `collect_trials`, tests in `backend/tests/test_trials.py`). **Depends on:** Step 5. **Size:** M.
 
 ```gherkin
 Feature: ClinicalTrials.gov collection
@@ -1507,6 +1507,10 @@ Feature: ClinicalTrials.gov collection
 | Which statuses to request (the live export includes terminated, withdrawn and suspended) | Request all statuses |
 | 730-day completed rule | As documented in the fields file, to verify |
 | Retention of conditions and interventions | Stored |
+| Short aliases | The similarity is a strict token ratio (company suffixes ignored, word order ignored, difflib), so "Apellis" scores 0.48 against "Apellis Pharmaceuticals, Inc." and does not match. Use the full name or a manual override |
+| Aliases when a company has none | One is derived from the company name (suffix removed). SEC former names are not collected yet |
+| A study shared by two companies | `ct_study_version` is unique on (study, content), so one row exists per content; the second company is counted as `shared_skipped` |
+| Completion precision | Added `completion_precision` to the study version (migration trials 0002); the primary date already had one |
 
 **Test plan**
 | ID | Level | Test | Data | Pass condition |

@@ -34,6 +34,7 @@ class CtStudyVersion(models.Model):
     )
     completion_raw = models.CharField(max_length=16, blank=True)
     completion_date = models.DateField(null=True, blank=True)
+    completion_precision = models.CharField(max_length=8, choices=Precision.choices, blank=True)
     last_update_posted = models.DateField(null=True, blank=True)
     title = models.TextField(blank=True)
     conditions = models.JSONField(default=list, blank=True)
