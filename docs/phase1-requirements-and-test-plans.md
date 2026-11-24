@@ -1,8 +1,8 @@
 # OxHouse Research: Phase 1 Requirements and Test Plans
 
-Status: proposal for review. Nothing here has been implemented, and nothing has been written to the repository.
+Status: living document. Steps 0 to 16 and the Step 18 company-page API are built (each step carries its own status line). Steps 17, 19 and 20 are not built yet.
 
-This document turns the 24 Phase 1 steps (0 to 20, plus 11A, 11B and 13A) into Gherkin requirements with acceptance criteria, open items and test plans. It builds on the Phase 1 architecture and data model v6. Since v4, every company-page field is collected for every company in the universe each day, which is why FINRA short volume (11A) and Form 4 insider activity (11B) are Phase 1 steps. v5 consolidates storage to 23 tables (two metric tables become views, four explanatory tables become JSONB on their parent rows, reason codes become a list in code) and adds a rule that the API reads only one read model, the `company_page` view. The pipeline is one daily batch that starts at 06:00 US Eastern, Monday to Friday, and is meant to finish by 07:00 (Step 16). It replaces the earlier two-stage design (a 16:30 market stage and a 23:30 filings stage), and the read model is refreshed as the batch's last step.
+This document turns the 24 Phase 1 steps (0 to 20, plus 11A, 11B and 13A) into Gherkin requirements with acceptance criteria, open items and test plans. It builds on the Phase 1 architecture and data model v6. Since v4, every company-page field is collected for every company in the universe each day, which is why FINRA short volume (11A) and Form 4 insider activity (11B) are Phase 1 steps. v5 consolidates storage to 23 tables (two metric tables become views, four explanatory tables become JSONB on their parent rows, reason codes become a list in code) and adds a rule that the API reads only one read model, the `company_page` view. The pipeline is one daily batch that starts at 06:00 US Eastern, Monday to Friday, and is meant to finish by 07:00 (Step 16). It replaces the earlier two-stage design (a 16:30 market stage and a 23:30 filings stage), and the batch checks the read model as its last step.
 
 ---
 
@@ -85,7 +85,7 @@ Feature: Cross-cutting engineering rules
   Scenario: One daily batch
     Given the batch starts at 06:00 US Eastern on weekdays (setting schedule.batch_start_et)
     Then every source is collected, the universe is scored, the default screen is run and the
-         read model is refreshed in that one run
+         read model is checked in that one run
     And the data describes the last completed US trading day
     And the people using the tool see one consistent day until the next batch finishes
 
@@ -621,7 +621,7 @@ Feature: Phase 1 data model
 |---|---|
 | One schema with app-prefixed tables (versus several schemas) | One schema; a separate restricted schema only when positions arrive |
 | Array columns versus child tables for reason codes | PostgreSQL arrays; codes themselves are a list in code |
-| `company_page` as a view or a materialised table | **Materialised, refreshed as the last step of the daily batch (O25).** It is a plain view today; Step 16 turns it into a PostgreSQL materialised view, with a unique index so it can be refreshed without blocking readers. The metric views are then evaluated once per batch, not on every request |
+| `company_page` as a view or a materialised table | **Decided: a plain view (O25).** It reads the latest completed score run, so nothing needs refreshing; the batch checks inside its transaction that the view serves every scored company. A materialised view stays an option if request speed ever needs it (the live page took 129 ms) |
 | Per-field reasons on `company_page` | `field_meta` carries as-of dates, ages and reason codes per source group; per-field reasons are filled in as the collectors (Steps 10 to 14) populate each field |
 | "Stale" for short volume | More than 5 weekdays since the latest trading day with data; market holidays are not modelled |
 | Amendments of Form 4 filings | A nullable `amends_accession` column on `sec_form4_filing` links a 4/A to the filing it replaces; the insider view drops the original only when the amendment parsed |
@@ -1757,7 +1757,7 @@ Feature: The daily batch
          9 resolve the effective inputs
          10 score the universe
          11 run the default screen and write funnel events
-         12 refresh the read model
+         12 check the read model (a plain view; nothing to refresh)
 
   Scenario: The day the data describes
     Then the run's market date is the last completed US trading day before the run date
@@ -1778,7 +1778,7 @@ Feature: The daily batch
 
   Scenario: Read model is refreshed last and only after a good score run
     Given the score run completed
-    Then the read model is refreshed as the final step, in one atomic refresh
+    Then the read model is checked as the final step, in the same transaction as the score and the screen
     And API clients see either the previous day's complete data or the new one, never a mix
     But given scoring was skipped or failed
     Then the read model keeps the previous day's data, and the API reports its age
@@ -2198,7 +2198,7 @@ Feature: Acceptance against the current system
 | O22 | Market cap rounding ($308M) versus the ABEO report ($307.94M) | Step 18 | Page rule wins | Product owner |
 | O23 | Display of a capped runway | Steps 12, 18 | "360+ months" | Product owner |
 | O24 | "Phase 2/3" in next-milestone ordering; indications de-duplication parity | Step 13A | Phase 3; no de-duplication | Product owner |
-| O25 | `company_page` as a view or a materialised table | Steps 5, 9, 16, 18 | Materialised, refreshed as the last batch step (decided with the 06:00 batch); today it is a plain view | Engineer |
+| O25 | `company_page` as a view or a materialised table | Steps 5, 9, 16, 18 | Decided: a plain view over the latest completed score run; the batch checks it as its last step | Engineer |
 | O27 | Batch start and finish: start 06:00 US Eastern Monday to Friday, ready by 07:00 | Steps 16, 19 | 06:00 start, 07:00 alert | Product owner |
 | O28 | What Finviz returns at 06:00 (assumed the previous close) | Steps 10, 16 | Verify with the first real download | Engineer |
 | O29 | How the batch knows the market was closed | Step 16 | Market-holiday list in settings | Engineer |
