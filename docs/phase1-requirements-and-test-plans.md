@@ -1330,7 +1330,7 @@ Feature: SEC Form 4 insider activity
 
 ## Step 12: Runway calculator
 
-**Depends on:** Step 11 for the integration tests only. **Size:** M.
+**Status: done** (code in `backend/apps/sec/runway.py`, `runway_service.py` and the `calculate_runway` command; tests in `backend/tests/test_runway.py`). Trial burn is empty until Step 13 stores studies. **Depends on:** Step 11 for the integration tests only. **Size:** M.
 
 ```gherkin
 Feature: Runway
@@ -1428,6 +1428,13 @@ Feature: Runway
 | What revenue and R&D tags feed beyond the fallback | Stored, not used in scoring |
 | Display of a capped runway (360 months) | Shown as "360+ months" with the cap flag (to confirm) |
 | Burn breakdown samples for KTTA, SMMT, RZLT, APLM, PACS, ABBV, APMD, ABVX | Requested from the other system's owner |
+| No annual cash-flow figure (recent IPOs) | Latest year-to-date figure over its months; the `ocf_ytd_naive_sum` switch (on) sums every quarterly fact of the year instead. See the finding below |
+
+**Findings from the real data (2026-11-24, facts as filed on or before 2026-10-14, against the export of 2026-10-14)**
+- Cash matches the export within 1 percent for 873 of 982 companies. The rest differ in the export's favour or against it with no pattern in the allow-listed tags (ALMS: 63.7M here against 502.3M, which looks like investments under tags that are not on the allow-list; ABT: the export equals the 2026-03-31 balance, not the later 2026-06-30 one). To raise with the other system's owner.
+- Among the 688 companies the export marks as having no active trials, monthly burn matches for 667 (97 percent). The 21 others have no annual cash-flow fact (ALMR, COAG, CNXU, BMGL and similar) and the export's figure cannot be derived from the facts (ALMR: 90.0M a year in the export; the 10-Q year-to-date values are 20.3M, 31.7M, 46.4M). Seven others show the export using R&D where operating cash flow exists.
+- Every other burn difference is trial burn (round multiples of the placeholder rates), which exists only after Step 13.
+- Runway with the default parity switches: 986 of 1,055 companies on 2026-11-24, 57 unavailable (41 non-USD only, 13 no companyfacts, 1 no CIK, the rest cash missing).
 
 **Test plan**
 | ID | Level | Test | Data | Pass condition |
