@@ -29,7 +29,7 @@ pipeline behaviour changes; the same 55 page fields are collected for every comp
 
 | Change | Effect |
 |---|---|
-| 7 tables removed | Phase 1 goes from 30 tables to 23 (the screening phase only) |
+| 7 tables removed | Phase 1 goes from 30 tables to 23 (the screening phase only), plus `alert_state` added with Step 17, 24 in all |
 | Explanatory detail moves into JSONB on its parent row | `pipeline_step` (as `pipeline_run.steps`), `runway_trial_burn_line` (as `runway_calc.trial_burn_lines`), `catalyst_candidate` (as `catalyst_signal.candidates`), `peer_group_stat` (as `score_run.peer_group_stats`) |
 | Reason codes become code, not a table | A fixed list in the code base (Django choices) and the section 4.9 list; the database stores the code text |
 | Two metric tables become database views | `short_volume_metric` and `insider_metric_daily` are computed from `short_volume_daily` and `sec_form4_transaction`; carry-forward becomes automatic because the view always uses the latest source rows and reports their age |
@@ -373,6 +373,7 @@ company drifts across the line), and anything a user pins. A small `coverage_mem
 | `source_call` | id, run_id, feed (`finviz_elite`, `sec_tickers`, `sec_companyfacts`, `sec_submissions`, `ctgov_studies`, `finra_regsho`, `sec_form4`), scope_key (CIK, sponsor or date), requested_at, completed_at, http_status, status (`ok`, `partial`, `failed`, `skipped`), reason_code, attempts, bytes, content_hash, storage_uri, error_text | The replacement for the old system's dead error flag. Everything downstream links here. |
 | `data_quality_check` | run_id, check_name, scope (for example `finviz.eps_this`), expected, observed, status, detail | Column completeness, row count, duplicate tickers. Catches a column that goes blank across the whole universe. |
 | `setting` | key, value (jsonb), updated_by, updated_at | Default filters, max ages, schedule offsets |
+| `alert_state` | key (unique), kind, subject, body, active, raised_at, cleared_at, last_sent_at, send_count | Which alert conditions are raised, so a persisting condition sends one email and a recurrence after recovery sends again (Step 17) |
 
 Reason codes are not a table. They are a fixed list in the code base (section 4.9), stored as text beside each null and validated by the application and by check constraints.
 
@@ -520,7 +521,7 @@ This list lives in code (Django choices), not in a table.
 | Refresh | None needed: a plain view over the latest completed score run, so a run becomes visible when it is marked complete. The batch makes that atomic by scoring, screening and checking the view in one transaction. It can be materialised later (refreshed concurrently as the batch's last step) without any API change |
 | Expected cost | A company page is one row; the screener list is 1,053 rows. Both are comfortably fast on a single small server |
 
-Counting: the 23 Phase 1 tables are the tables in sections 4.1 to 4.7. `short_volume_metric`, `insider_metric_daily` and `company_page` are views and are not counted.
+Counting: the 24 Phase 1 tables (the 23 designed, plus `alert_state`) are the tables in sections 4.1 to 4.7. `short_volume_metric`, `insider_metric_daily` and `company_page` are views and are not counted.
 
 ### 4.10 Phase 1 entity diagrams
 

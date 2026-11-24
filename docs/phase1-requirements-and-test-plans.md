@@ -1,8 +1,8 @@
 # OxHouse Research: Phase 1 Requirements and Test Plans
 
-Status: living document. Steps 0 to 16 and the Step 18 company-page API are built (each step carries its own status line). Steps 17, 19 and 20 are not built yet.
+Status: living document. Steps 0 to 18 are built (each step carries its own status line). Steps 19 and 20 are not built yet.
 
-This document turns the 24 Phase 1 steps (0 to 20, plus 11A, 11B and 13A) into Gherkin requirements with acceptance criteria, open items and test plans. It builds on the Phase 1 architecture and data model v6. Since v4, every company-page field is collected for every company in the universe each day, which is why FINRA short volume (11A) and Form 4 insider activity (11B) are Phase 1 steps. v5 consolidates storage to 23 tables (two metric tables become views, four explanatory tables become JSONB on their parent rows, reason codes become a list in code) and adds a rule that the API reads only one read model, the `company_page` view. The pipeline is one daily batch that starts at 06:00 US Eastern, Monday to Friday, and is meant to finish by 07:00 (Step 16). It replaces the earlier two-stage design (a 16:30 market stage and a 23:30 filings stage), and the batch checks the read model as its last step.
+This document turns the 24 Phase 1 steps (0 to 20, plus 11A, 11B and 13A) into Gherkin requirements with acceptance criteria, open items and test plans. It builds on the Phase 1 architecture and data model v6. Since v4, every company-page field is collected for every company in the universe each day, which is why FINRA short volume (11A) and Form 4 insider activity (11B) are Phase 1 steps. v5 consolidates storage to 23 tables (24 with `alert_state`, added in Step 17) (two metric tables become views, four explanatory tables become JSONB on their parent rows, reason codes become a list in code) and adds a rule that the API reads only one read model, the `company_page` view. The pipeline is one daily batch that starts at 06:00 US Eastern, Monday to Friday, and is meant to finish by 07:00 (Step 16). It replaces the earlier two-stage design (a 16:30 market stage and a 23:30 filings stage), and the batch checks the read model as its last step.
 
 ---
 
@@ -1712,7 +1712,7 @@ Feature: Choosing the inputs the scorer sees
 | Item | Default |
 |---|---|
 | Final max ages | 120 days, 7 days, 5 trading days and 7 days |
-| Whether a carried value older than half its max age triggers a warning | Yes, on the health page (not built: the age is stored on every score result, `input_resolution`, for the health page to read) |
+| Whether a carried value older than half its max age triggers a warning | Yes, on the health page (built: `inputs.carried_past_half_max_age` on the health API) |
 | Where carry-forward is switched on | The `carry_forward` quirk of the formula in use. Parity keeps it off. A new formula `production` v1 (migration scoring 0006) is parity with it on; run `score_day --formula production` |
 | Without carry-forward | The latest good row is used as it was delivered, whatever its date (the golden runway rows are 2 to 5 days old and must still be used); a bad latest row gives NULL with its own reason |
 | What a failed catalyst fetch is | `derive_catalyst` marks a company's signal `failed` (first reason the failed call's code, else `fetch_error`) when it has had ClinicalTrials.gov calls before but none of its aliases was fetched successfully by the run of that day. Companies that never had a call (fixtures) are not judged |
@@ -1850,7 +1850,7 @@ Feature: The daily batch
 | Refresh method for the read model | `company_page` is a plain view over the latest completed score run, so it needs no refresh. The batch scores, runs the default screen and checks that the view serves every scored company inside one transaction; readers see the previous page or the new one, never a mix. A failure rolls the transaction back |
 | First live run | Found a bug the fake-source tests could not: the read-model check expected the new score run to be the page's latest, but a run for a later market date was already served. The check now verifies whichever run the view serves and records `serves_new_run`. The same run also showed the resume path on live data (SEC had failed for a missing contact address; the re-run skipped every finished step, ran SEC, then published) |
 | The twelve steps | Recorded as `finviz`, `sec` (CIKs, submissions, facts and Form 4 documents, one collector with its own sub-steps listed in the step detail), `finra`, `trials`, `runway`, `catalyst`, `metrics` (insider and short-volume views, read as of the market date), `resolve_inputs`, `score`, `screen`, `read_model` |
-| Alerts | The batch sends through `AlertSink`; the default writes to the error log. Step 17 plugs email in. Sent: Finviz failed, scoring failed, publish rolled back, still running at the deadline |
+| Alerts | The batch sends through `AlertSink`, wrapped by `DedupAlerts` (Step 17: email when `ALERT_EMAIL_TO` is set, otherwise the error log). Sent: Finviz failed, scoring failed, publish rolled back, still running at the deadline |
 | Scheduling | The timer is outside the code: a crontab line `CRON_TZ=America/New_York` and `0 6 * * 1-5 python manage.py run_batch --schedule`. Settings `schedule.batch_start_et` (06:00), `schedule.batch_deadline_et` (07:00), `batch.formula` (production) and `market_holidays` (extra closed dates) |
 | Which batch resumes | The latest batch for the same run date that is failed, partial or still marked running; steps recorded ok are not repeated. A run that finished ok is followed by a fresh full run (the same scores) |
 | No new market day | An earlier run date's batch already scored that market date (a Monday holiday followed by Tuesday). The batch collects, records `market` skipped, scores nothing and sends no alert |
@@ -1876,7 +1876,7 @@ Feature: The daily batch
 
 ## Step 17: Pipeline health API and alerts
 
-**Depends on:** Step 16. **Size:** S.
+**Status: done** (`GET /api/health`; code in `backend/apps/platform/health.py`, `alerts.py`, `alert_rules.py` and `backend/apps/web/health_api.py`; documented in `docs/api.md`; tests in `backend/tests/test_alerts.py`). **Depends on:** Step 16. **Size:** S.
 
 ```gherkin
 Feature: Pipeline health
@@ -1916,7 +1916,13 @@ Feature: Pipeline health
 |---|---|
 | Alert channel and recipients | Email to the team |
 | Mail provider | A low-cost transactional mail service |
-| Alert delivery | The batch already sends through an alert sink that writes to the error log (Step 16); this step plugs email in |
+| Alert delivery | The batch already sends through an alert sink that writes to the error log (Step 16); this step plugs email in (`EmailAlerts`, chosen when `ALERT_EMAIL_TO` is set) |
+| De-duplication | A new table, `alert_state` (the 24th), holds each condition's state. A condition is raised and emailed once; it stays raised until a batch finds it clear, and a recurrence emails again. An email that cannot be delivered is not recorded, so the next batch tries again |
+| Source failing two days | A feed has at least one failed call and no good call on each of the last two batch days (any collector, by time window). The Finviz outage therefore raises `finviz_failed` on day one and `source_failing` on day two |
+| Form 4 threshold | More than 5 parse failures in a run (setting `alerts.form4_parse_failures_max`) |
+| FINRA missing file | A trading day in the last ten days, up to the market date, with a "no file" answer and no loaded file. Weekends and market holidays are not alerted. Each date is its own alert |
+| Carried value past half its maximum age | Shown on the health response (`inputs.carried_past_half_max_age`); no email |
+| Where the rules run | At the end of every batch, after its status is saved; a rule that fails is logged and never undoes the batch |
 
 **Test plan**
 | ID | Level | Test | Pass condition |

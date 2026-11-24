@@ -78,6 +78,22 @@ ASGI_APPLICATION = "config.asgi.application"
 
 DATABASES = {"default": _config.database}
 
+# Alert email (Step 17). With no recipients the alerts go to the error log only. Any SMTP mail
+# service works; in development the default backend prints the message to the console.
+ALERT_EMAIL_TO = [a.strip() for a in os.environ.get("ALERT_EMAIL_TO", "").split(",") if a.strip()]
+ALERT_EMAIL_FROM = os.environ.get("ALERT_EMAIL_FROM", "alerts@localhost")
+EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND") or (
+    "django.core.mail.backends.console.EmailBackend"
+    if DEBUG
+    else "django.core.mail.backends.smtp.EmailBackend"
+)
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "localhost")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "true").strip().lower() in ("1", "true", "yes")
+EMAIL_TIMEOUT = 20
+
 # Raw downloads: kept unchanged on local disk in development, never kept in production (only the
 # parsed rows and each download's hash). RAW_STORAGE_BACKEND is "local" or "none"; the default
 # follows DEBUG. Local disk is refused in production.

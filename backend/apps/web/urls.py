@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from django.urls import path
 
-from apps.web import auth_views, company_api, screener_api
+from apps.web import auth_views, company_api, health_api, screener_api
 
 urlpatterns = [
     path("auth/csrf", auth_views.csrf, name="api-csrf"),
@@ -17,6 +17,7 @@ urlpatterns = [
     path("screener/funnel", screener_api.funnel, name="api-funnel"),
     path("screener/why/<str:ticker>", screener_api.why_excluded, name="api-why-excluded"),
     path("company/<str:ticker>", company_api.company_page, name="api-company"),
+    path("health", health_api.health, name="api-health"),
     path("screens/", screener_api.screens, name="api-screens"),
     path("screens/<int:screen_id>", screener_api.screen_detail, name="api-screen"),
 ]

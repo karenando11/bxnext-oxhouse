@@ -49,7 +49,8 @@ from apps.marketdata.finviz.client import Transport as FinvizTransport
 from apps.marketdata.finviz.ingest import FinvizIngestFailed, IngestResult, ingest_finviz
 from apps.marketdata.models import FinvizSnapshot, ShortVolumeDaily
 from apps.marketdata.storage import RawStorage
-from apps.platform.alerts import AlertSink, LogAlerts
+from apps.platform.alert_rules import evaluate_alerts
+from apps.platform.alerts import AlertSink, DedupAlerts, default_sink
 from apps.platform.calendar import market_date_for
 from apps.platform.models import PipelineRun
 from apps.platform.settings_store import get_setting
@@ -610,7 +611,7 @@ def run_batch(
 ) -> BatchResult:
     """Run the daily batch for ``run_date``. Returns ``locked`` without work if one is running."""
     sources = sources or Sources()
-    alerts = alerts or LogAlerts()
+    alerts = alerts or default_sink()
     with batch_lock() as got:
         if not got:
             logger.warning("A batch is already running; this start does nothing.")
@@ -625,10 +626,12 @@ def _run_locked(
     alerts: AlertSink,
     seconds_to_deadline: float | None,
 ) -> BatchResult:
-    market_day = market_date_for(run_date, _settings_holidays())
+    holidays = _settings_holidays()
+    market_day = market_date_for(run_date, holidays)
     new_day = not _already_described(market_day, run_date)
     run, resumed = _open_run(run_date, market_day, trigger)
-    batch = _Batch(run, run_date, market_day, sources, alerts, trigger)
+    dedup = DedupAlerts(alerts)
+    batch = _Batch(run, run_date, market_day, sources, dedup, trigger)
 
     if seconds_to_deadline is None:
         seconds_to_deadline = (deadline_for(run_date) - datetime.now(MARKET_TZ)).total_seconds()
@@ -655,6 +658,12 @@ def _run_locked(
         status = PipelineRun.Status.OK
     run.status, run.finished_at = status, datetime.now(UTC)
     run.save(update_fields=["status", "finished_at"])
+    if watch is not None and watch.sent:  # the thread already sent it; record the condition
+        dedup.raise_silently("batch_overrun", "batch_overrun", "Daily batch overran", "")
+    try:
+        evaluate_alerts(run, market_day, dedup, holidays)
+    except Exception:  # an alert rule must never undo a finished batch
+        logger.exception("Evaluating the alert conditions failed")
     return BatchResult(status, run, market_day, new_day, batch.scored, resumed)
 
 

@@ -52,7 +52,7 @@ class World:
         self.sec_calls = 0
         self.sec_delay = 0.0
         self.ct_calls = 0
-        self.finra = FakeFinra()
+        self.finra = FakeFinra(weekdays=True)
         self.finra_down = False
 
     def finviz_transport(self, url: str, timeout: float) -> tuple[int, bytes]:

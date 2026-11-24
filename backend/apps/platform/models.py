@@ -120,3 +120,26 @@ class Setting(models.Model):
     value = models.JSONField()
     updated_by = models.CharField(max_length=150, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+
+class AlertState(models.Model):
+    """Whether an alert condition is currently raised, so one condition sends one email.
+
+    A condition is *raised* the first time it holds (the email goes out then) and stays raised, with
+    no further email, until it clears. When it recurs after clearing it is raised, and sent, again.
+    """
+
+    key = models.CharField(
+        max_length=96, unique=True, help_text="Condition, e.g. finra_missing:2026-11-20."
+    )
+    kind = models.CharField(max_length=48)
+    subject = models.CharField(max_length=200)
+    body = models.TextField(blank=True)
+    active = models.BooleanField(default=True)
+    raised_at = models.DateTimeField()
+    cleared_at = models.DateTimeField(null=True, blank=True)
+    last_sent_at = models.DateTimeField(null=True, blank=True)
+    send_count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        indexes = [models.Index(fields=["active", "-raised_at"], name="alertstate_active")]

@@ -22,14 +22,17 @@ def finra_file(day: date, rows: list[tuple[str, int, int, str]], footer: bool = 
 class FakeFinra:
     """A transport that plays back files by date and records every request."""
 
-    def __init__(self, files: Mapping[date, object] | None = None) -> None:
+    def __init__(self, files: Mapping[date, object] | None = None, weekdays: bool = False) -> None:
         self.files: dict[date, object] = dict(files or {})
+        self.weekdays = weekdays  # publish a small file for every weekday not listed in ``files``
         self.urls: list[str] = []
 
     def __call__(self, url: str, timeout: float) -> tuple[int, bytes]:
         self.urls.append(url)
         day = date(int(url[-12:-8]), int(url[-8:-6]), int(url[-6:-4]))
         outcome = self.files.get(day, (404, b""))
+        if self.weekdays and day not in self.files and day.weekday() < 5:
+            outcome = finra_file(day, [("ZZZZ", 100, 200, "Q")])
         if isinstance(outcome, list):
             outcome = outcome.pop(0) if len(outcome) > 1 else outcome[0]
         if isinstance(outcome, BaseException):

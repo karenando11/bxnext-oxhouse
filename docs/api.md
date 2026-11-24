@@ -90,3 +90,34 @@ A value that is missing is `null`, and its reason is in `fields` (see below).
 | `insider` | `filings_90d`, `open_market_buys`, `open_market_sales`, `officers_directors_buying`, `officers_directors_selling`, `pct_sale_dollars_under_10b5_1`, `age_days`, `is_stale`, `reasons`. |
 | `vintage` | The footer: for each block its `as_of` date, its `source` and where relevant `age_days`, `balance_sheet_date` or `produced_at`. |
 | `fields` | All 55 fields of the company-page field list, keyed by name, each `{n, label, value, reason}`. `value` is set or `reason` is: a reason code such as `non_usd_only`, `cash_missing`, `no_trials`, `not_in_finra_file`, `company_cash_positive`, `fixture_not_available`, or one of three the API adds for values no collector stores: `not_reported` (the source left it blank), `no_open_market_sales` (no sales in the window, so no 10b5-1 share) and `not_available`. A consumer can render any field from here without knowing which block holds it. |
+
+## Pipeline health
+
+`GET /api/health` (sign-in required) reports what the last daily batch did and what needs
+attention. It is built from the pipeline tables, not from the company-page read model.
+
+| Key | Content |
+|---|---|
+| `last_batch` | The latest batch: run id, run date, market date, status, start, finish, duration, `failed_steps` and every step (`step_name`, `status`, `rows_in`, `rows_out`, `error_text`, `detail`) |
+| `sources` | One entry per feed: `last_success`, `last_failure`, `last_failure_reason` |
+| `quality_checks` | The data-quality checks of the last batch, failures first (check, scope, status, expected, observed, detail) |
+| `inputs` | For the latest complete score run: how many companies have a `fresh`, `carried`, `expired` or `missing` runway and catalyst, how many carried values are older than half their maximum age, and counts of null inputs |
+| `active_alerts` | Alert conditions raised now: key, kind, subject, when raised, emails sent |
+| `history` | The last 30 batch runs, newest first, without their steps |
+
+### Alerts
+
+Alerts are emailed to `ALERT_EMAIL_TO` (comma-separated; the mail server is set with `EMAIL_HOST`,
+`EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS`, and the sender with
+`ALERT_EMAIL_FROM`). With no recipients they go to the error log. A condition sends one email when
+it is raised and nothing more while it persists; after it clears, a recurrence sends again.
+
+| Condition | Key |
+|---|---|
+| The daily batch fails (Finviz, scoring or publish, or any other failure) | `finviz_failed`, `score_failed`, `publish_failed`, `batch_failed` |
+| The batch is still running at 07:00 | `batch_overrun` |
+| A source fails on two consecutive batch days | `source_failing:<feed>` |
+| A Finviz column is blank across the whole universe | `blank_column:finviz.<column>` |
+| The Finviz row count changes by more than 20 percent | `finviz_row_count` |
+| Form 4 parse failures exceed the limit (setting `alerts.form4_parse_failures_max`, default 5) | `form4_parse_failures` |
+| FINRA has no file for a trading day in the last ten days | `finra_missing:<date>` |
