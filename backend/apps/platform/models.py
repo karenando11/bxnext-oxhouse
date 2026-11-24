@@ -13,6 +13,7 @@ class PipelineRun(models.Model):
     class Stage(models.TextChoices):
         MARKET = "market", "Market snapshot and scoring"
         FILINGS = "filings", "Filings, trials, insider and short volume"
+        BATCH = "batch", "Daily batch"
 
     class Trigger(models.TextChoices):
         SCHEDULE = "schedule", "Schedule"
@@ -27,6 +28,11 @@ class PipelineRun(models.Model):
     stage = models.CharField(max_length=16, choices=Stage.choices)
     as_of_date = models.DateField(help_text="Market date (US Eastern) the run describes.")
     trigger = models.CharField(max_length=16, choices=Trigger.choices)
+    run_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Batch runs only: the date (US Eastern) the batch was started for.",
+    )
     started_at = models.DateTimeField()
     finished_at = models.DateTimeField(null=True, blank=True)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.RUNNING)

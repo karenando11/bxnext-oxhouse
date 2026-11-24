@@ -11,7 +11,7 @@ from apps.platform.models import PipelineRun
 class StepRecorder:
     def __init__(self, run: PipelineRun) -> None:
         self.run = run
-        self.items: list[dict[str, Any]] = []
+        self.items: list[dict[str, Any]] = list(run.steps or [])
 
     def record(
         self,
@@ -21,17 +21,19 @@ class StepRecorder:
         rows_in: int | None = None,
         rows_out: int | None = None,
         error: str = "",
+        detail: dict[str, Any] | None = None,
     ) -> None:
-        self.items.append(
-            {
-                "step_name": name,
-                "started_at": datetime.fromtimestamp(started, UTC).isoformat(),
-                "finished_at": datetime.now(UTC).isoformat(),
-                "status": status,
-                "rows_in": rows_in,
-                "rows_out": rows_out,
-                "error_text": error,
-            }
-        )
+        entry: dict[str, Any] = {
+            "step_name": name,
+            "started_at": datetime.fromtimestamp(started, UTC).isoformat(),
+            "finished_at": datetime.now(UTC).isoformat(),
+            "status": status,
+            "rows_in": rows_in,
+            "rows_out": rows_out,
+            "error_text": error,
+        }
+        if detail:
+            entry["detail"] = detail
+        self.items.append(entry)
         self.run.steps = self.items
         self.run.save(update_fields=["steps"])
