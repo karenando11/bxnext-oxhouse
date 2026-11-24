@@ -1,6 +1,6 @@
 # OxHouse Research: Phase 1 Requirements and Test Plans
 
-Status: living document. Steps 0 to 18 are built (each step carries its own status line). Steps 19 and 20 are not built yet.
+Status: living document. Steps 0 to 18 are built, and Step 19's deployment files are written but have not run on a server (each step carries its own status line). Step 20 is not built yet.
 
 This document turns the 24 Phase 1 steps (0 to 20, plus 11A, 11B and 13A) into Gherkin requirements with acceptance criteria, open items and test plans. It builds on the Phase 1 architecture and data model v6. Since v4, every company-page field is collected for every company in the universe each day, which is why FINRA short volume (11A) and Form 4 insider activity (11B) are Phase 1 steps. v5 consolidates storage to 23 tables (24 with `alert_state`, added in Step 17) (two metric tables become views, four explanatory tables become JSONB on their parent rows, reason codes become a list in code) and adds a rule that the API reads only one read model, the `company_page` view. The pipeline is one daily batch that starts at 06:00 US Eastern, Monday to Friday, and is meant to finish by 07:00 (Step 16). It replaces the earlier two-stage design (a 16:30 market stage and a 23:30 filings stage), and the batch checks the read model as its last step.
 
@@ -2072,7 +2072,7 @@ Feature: Company page API
 
 ## Step 19: Deployment and operations
 
-**Depends on:** Step 0. **Size:** S.
+**Status: files built and checked locally; no server exists yet** (everything is in `deploy/`: compose file, Caddyfile, deploy, backup and restore scripts, systemd timers, `deploy/README.md`; `.github/workflows/deploy.yml`; `check_disk` and Sentry in the backend; tests in `backend/tests/test_deploy.py`). A19.1 to A19.3 and T19.1 to T19.4 need a real server and are still to do. **Depends on:** Step 0. **Size:** S.
 
 ```gherkin
 Feature: Production operations
@@ -2111,6 +2111,13 @@ Feature: Production operations
 |---|---|
 | Hosting provider, domain and bucket | A single low-cost VPS, to be chosen by the engineer |
 | Retention of backups | 30 days |
+| Stack | Caddy (automatic HTTPS), the production image under gunicorn, PostgreSQL 16 on a private network. Only Caddy publishes ports. Checked: the production image builds with Sentry included, the compose file resolves and the Caddyfile validates |
+| Access protection | Two layers: the Caddy allow-list (`ALLOWED_NETWORKS`, others get 403) and the API sign-in. Nothing is checked from a real disallowed network yet (T19.4) |
+| Timers | systemd timers on the host with the zone in the expression (`Mon..Fri 06:00:00 America/New_York`), so daylight saving needs no handling. Backup 02:00 Eastern, disk check hourly |
+| Backups | `pg_dump -Fc` uploaded to any S3-compatible bucket (aws CLI); dumps older than 30 days removed by the script, and a bucket lifecycle rule should do the same. Restore: `deploy/restore.sh`, which refuses to overwrite a database that has tables |
+| Errors and disk | Sentry when `SENTRY_DSN` is set. `check_disk` alerts through the Step 17 mechanism (one email above 80 percent, cleared below) |
+| Deploy | The workflow runs after CI passes on `main` (or by hand), over SSH, and calls `deploy/deploy.sh`. It needs the secrets `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS` and a GitHub environment named `production`. It has never run |
+| Secrets | `deploy/.env` on the server, git-ignored; the repository holds only `env.production.example` with empty values (tested) |
 
 **Test plan**
 | ID | Level | Test | Pass condition |

@@ -150,3 +150,16 @@ LOGGING = {
     },
     "root": {"handlers": ["console"], "level": "INFO"},
 }
+
+# Error tracker (Step 19). Unhandled errors in the web app and in the batch go to Sentry (or any
+# Sentry-compatible service) when SENTRY_DSN is set; nothing is sent
+# otherwise. Personal data is not attached (the SDK default).
+SENTRY_DSN = os.environ.get("SENTRY_DSN", "").strip()
+if SENTRY_DSN:
+    import sentry_sdk
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        environment=os.environ.get("SENTRY_ENVIRONMENT", "production"),
+        traces_sample_rate=0.0,
+    )

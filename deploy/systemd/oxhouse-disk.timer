@@ -1,0 +1,10 @@
+[Unit]
+Description=Check OxHouse disk usage every hour
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+Unit=oxhouse-disk.service
+
+[Install]
+WantedBy=timers.target

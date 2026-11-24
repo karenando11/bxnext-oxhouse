@@ -1,0 +1,11 @@
+[Unit]
+Description=OxHouse daily batch
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/oxhouse/deploy
+ExecStart=/usr/bin/docker compose -f docker-compose.prod.yml run --rm app python manage.py run_batch --schedule
+# The batch stops itself if one is already running. 3 hours is far beyond the 07:00 target.
+TimeoutStartSec=10800

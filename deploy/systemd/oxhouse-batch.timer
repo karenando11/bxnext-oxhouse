@@ -1,0 +1,11 @@
+[Unit]
+Description=Start the OxHouse daily batch at 06:00 US Eastern, Monday to Friday
+
+[Timer]
+# systemd reads the zone in the expression, so daylight saving needs no handling here.
+OnCalendar=Mon..Fri 06:00:00 America/New_York
+Persistent=false
+Unit=oxhouse-batch.service
+
+[Install]
+WantedBy=timers.target

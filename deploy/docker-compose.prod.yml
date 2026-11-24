@@ -1,0 +1,75 @@
+# Production stack on one server (Step 19):
+#   caddy   reverse proxy: HTTPS (automatic certificates), and only the allowed networks get through
+#   app     the Django API (gunicorn), the production image
+#   db      PostgreSQL 16, on the private network only, never published
+#
+# The daily batch, backups and the disk check are run by systemd timers on the host (deploy/systemd)
+# with `docker compose run`, so they use the same image and settings.
+#
+# Secrets are in /srv/oxhouse/.env on the server (see deploy/env.production.example). Nothing
+# secret is in this repository.
+name: oxhouse
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-oxhouse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-oxhouse}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [private]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: ../backend
+      target: prod
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-oxhouse}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-oxhouse}
+      DJANGO_DEBUG: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [private]
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:?set SITE_DOMAIN in .env}
+      ALLOWED_NETWORKS: ${ALLOWED_NETWORKS:?set ALLOWED_NETWORKS in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on: [app]
+    networks: [private, public]
+
+networks:
+  private: {}
+  public: {}
+
+volumes:
+  pgdata:
+  caddy_data:

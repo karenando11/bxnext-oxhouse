@@ -1,0 +1,9 @@
+[Unit]
+Description=OxHouse nightly database backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/oxhouse/deploy
+ExecStart=/srv/oxhouse/deploy/backup.sh

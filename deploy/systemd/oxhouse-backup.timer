@@ -1,0 +1,10 @@
+[Unit]
+Description=Nightly OxHouse database backup (02:00 US Eastern, after the batch is long done)
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 America/New_York
+Persistent=true
+Unit=oxhouse-backup.service
+
+[Install]
+WantedBy=timers.target

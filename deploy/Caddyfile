@@ -1,0 +1,18 @@
+# HTTPS for {$SITE_DOMAIN} with an automatic certificate. Only the networks in ALLOWED_NETWORKS
+# (space-separated CIDR ranges, for example the office and VPN addresses) are let through; every
+# other address gets 403 before it reaches the application. Users then sign in to the API.
+{$SITE_DOMAIN} {
+	@allowed remote_ip {$ALLOWED_NETWORKS}
+	handle @allowed {
+		reverse_proxy app:8000
+	}
+	handle {
+		respond "Forbidden" 403
+	}
+	encode gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		-Server
+	}
+}

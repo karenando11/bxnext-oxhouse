@@ -1,0 +1,10 @@
+[Unit]
+Description=OxHouse disk usage check
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/oxhouse/deploy
+# The host's data disk is mounted read-only into the container for the reading.
+ExecStart=/usr/bin/docker compose -f docker-compose.prod.yml run --rm -v /var/lib/docker:/host/docker:ro app python manage.py check_disk --path /host/docker --limit 80
