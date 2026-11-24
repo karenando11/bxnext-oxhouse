@@ -27,6 +27,7 @@ from django.db import transaction
 from apps.marketdata.models import FinvizSnapshot
 from apps.platform.models import PipelineRun
 from apps.scoring.models import FormulaVersion, ScoreResult, ScoreRun
+from apps.scoring.resolver import max_age, resolve_catalysts, resolve_runways
 from apps.sec.models import RunwayCalc
 from apps.trials.models import CatalystSignal
 from scoring_engine import DIMENSIONS, CompanyInputs, CompanyScores, score_universe_with_stats
@@ -139,7 +140,9 @@ def _score(
     engine: EngineFormula,
     pipeline_run: PipelineRun | None,
 ) -> ScoreRun:
-    inputs, snapshots = _load_inputs(as_of_date, finviz_day)
+    inputs, snapshots = _load_inputs(
+        as_of_date, finviz_day, carry_forward=engine.quirks.carry_forward
+    )
     if not inputs:
         raise ValueError(f"No Finviz snapshots for {finviz_day}")
     run = ScoreRun.objects.create(
@@ -173,32 +176,31 @@ class _Links:
     company_pk: int
     runway: RunwayCalc | None
     catalyst: CatalystSignal | None
+    resolution: dict[str, dict[str, Any]]
+    carried: list[str]
 
 
 def _load_inputs(
-    as_of_date: date, finviz_day: date
+    as_of_date: date, finviz_day: date, *, carry_forward: bool
 ) -> tuple[dict[str, CompanyInputs], dict[str, _Links]]:
     snapshots = list(FinvizSnapshot.objects.filter(as_of_date=finviz_day).select_related("company"))
     company_ids = [s.company_id for s in snapshots]
-    runways: dict[int, RunwayCalc] = {}
-    for runway in RunwayCalc.objects.filter(
-        company_id__in=company_ids, calc_date__lte=as_of_date
-    ).order_by("calc_date", "id"):
-        runways[runway.company_id] = runway
-    catalysts: dict[int, CatalystSignal] = {}
-    for signal in CatalystSignal.objects.filter(
-        company_id__in=company_ids, as_of_date__lte=as_of_date
-    ).order_by("as_of_date", "id"):
-        catalysts[signal.company_id] = signal
+    runways = resolve_runways(
+        company_ids, as_of_date, carry_forward=carry_forward, max_age_days=max_age("runway")
+    )
+    catalysts = resolve_catalysts(
+        company_ids, as_of_date, carry_forward=carry_forward, max_age_days=max_age("catalyst")
+    )
 
     inputs: dict[str, CompanyInputs] = {}
     links: dict[str, _Links] = {}
     for snap in sorted(snapshots, key=lambda s: s.company_id):
         key = str(snap.company_id)
-        latest_runway = runways.get(snap.company_id)
-        latest_catalyst = catalysts.get(snap.company_id)
-        inputs[key] = _company_inputs(key, snap, latest_runway, latest_catalyst)
-        links[key] = _Links(snap.company_id, latest_runway, latest_catalyst)
+        runway, catalyst = runways[snap.company_id], catalysts[snap.company_id]
+        inputs[key] = _company_inputs(key, snap, runway.row, catalyst.row)
+        resolution = {"runway": runway.as_json(), "catalyst": catalyst.as_json()}
+        carried = [name for name, r in (("runway", runway), ("catalyst", catalyst)) if r.carried]
+        links[key] = _Links(snap.company_id, runway.row, catalyst.row, resolution, carried)
     return inputs, links
 
 
@@ -257,7 +259,8 @@ def _result_row(
         composite=scores.composite.score,
         runway_calc=links.runway,
         catalyst_signal=links.catalyst,
-        carried_inputs=[],
+        carried_inputs=links.carried,
+        input_resolution=links.resolution,
         missing_inputs=_missing(inputs),
         inputs=_plain(inputs),
         components={

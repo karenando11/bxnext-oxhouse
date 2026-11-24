@@ -12,8 +12,8 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
-from apps.companies.models import Company, TickerHistory
-from apps.platform.models import PipelineRun
+from apps.companies.models import Company, CompanySponsorAlias, TickerHistory
+from apps.platform.models import PipelineRun, SourceCall
 from apps.platform.steps import StepRecorder
 from apps.sec.models import RunwayCalc
 from apps.trials.catalyst import CatalystResult, derive_catalyst
@@ -77,6 +77,44 @@ def _financing_dates(company_ids: list[int], day: date) -> dict[int, date]:
     return found
 
 
+def fetch_failures(company_ids: list[int], day: date) -> dict[int, str]:
+    """Companies whose ClinicalTrials.gov data was not fetched this cycle, with the reason code.
+
+    A company that has never had a ClinicalTrials.gov call (fixture or hand-loaded studies) is not
+    judged. Otherwise some active alias must have a successful call from the run of ``day``;
+    when none does, the reason is the failed call's code, or ``fetch_error`` if there was no
+    call that day at all.
+    """
+    aliases: dict[int, list[str]] = {}
+    for company_id, name in CompanySponsorAlias.objects.filter(
+        company_id__in=company_ids, active=True
+    ).values_list("company_id", "sponsor_name"):
+        aliases.setdefault(company_id, []).append(name[:128])
+    scopes = {scope for names in aliases.values() for scope in names}
+    ever: set[str] = set(
+        SourceCall.objects.filter(feed=SourceCall.Feed.CTGOV, scope_key__in=scopes)
+        .values_list("scope_key", flat=True)
+        .distinct()
+    )
+    today: dict[str, tuple[bool, str]] = {}
+    calls = SourceCall.objects.filter(
+        feed=SourceCall.Feed.CTGOV, scope_key__in=scopes, run__as_of_date=day
+    ).order_by("requested_at", "id")
+    for call in calls:
+        ok = call.status == SourceCall.Status.OK
+        previous_ok = today.get(call.scope_key, (False, ""))[0]
+        today[call.scope_key] = (ok or previous_ok, "" if ok else call.reason_code or "fetch_error")
+    failed: dict[int, str] = {}
+    for company_id, names in aliases.items():
+        if not any(name in ever for name in names):
+            continue
+        if any(today.get(name, (False, ""))[0] for name in names):
+            continue
+        reasons = [today[name][1] for name in names if name in today and today[name][1]]
+        failed[company_id] = reasons[0] if reasons else "fetch_error"
+    return failed
+
+
 def derive_universe(
     day: date, *, trigger: str = PipelineRun.Trigger.MANUAL, tickers: list[str] | None = None
 ) -> CatalystRunResult:
@@ -97,6 +135,7 @@ def derive_universe(
     ids = [c.pk for c in companies]
     studies = _studies_by_company(ids, day)
     financing = _financing_dates(ids, day)
+    failures = fetch_failures(ids, day)
 
     by_source: dict[str, int] = {}
     rows: list[CatalystSignal] = []
@@ -104,6 +143,9 @@ def derive_universe(
         result: CatalystResult = derive_catalyst(
             studies.get(company.pk, []), day, runway_financing_date=financing.get(company.pk)
         )
+        if company.pk in failures:
+            result.status = "failed"
+            result.reason_codes = [failures[company.pk], *result.reason_codes]
         by_source[result.next_event_source] = by_source.get(result.next_event_source, 0) + 1
         rows.append(
             CatalystSignal(

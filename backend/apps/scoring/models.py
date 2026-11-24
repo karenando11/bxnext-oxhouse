@@ -81,6 +81,14 @@ class ScoreResult(models.Model):
     )
     carried_inputs = ArrayField(models.CharField(max_length=64), default=list, blank=True)
     missing_inputs = ArrayField(models.CharField(max_length=64), default=list, blank=True)
+    input_resolution = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=(
+            "For runway and catalyst: state (fresh, carried, expired, missing), age in days, "
+            "reason and the date of the row used."
+        ),
+    )
     inputs = models.JSONField(help_text="The exact dictionary the scorer received.")
     components = models.JSONField(help_text="Every intermediate term of every score.")
 

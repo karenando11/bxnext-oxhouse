@@ -1663,7 +1663,7 @@ Feature: Clinical catalyst date
 
 ## Step 15: Effective-input resolver and carry-forward
 
-**Depends on:** Steps 5, 11A, 11B, 12, 14. **Size:** S.
+**Status: done** (code in `backend/apps/scoring/resolver.py`, used by `service.py`; tests in `backend/tests/test_resolver.py`). **Depends on:** Steps 5, 11A, 11B, 12, 14. **Size:** S.
 
 ```gherkin
 Feature: Choosing the inputs the scorer sees
@@ -1704,7 +1704,13 @@ Feature: Choosing the inputs the scorer sees
 | Item | Default |
 |---|---|
 | Final max ages | 120 days, 7 days, 5 trading days and 7 days |
-| Whether a carried value older than half its max age triggers a warning | Yes, on the health page |
+| Whether a carried value older than half its max age triggers a warning | Yes, on the health page (not built: the age is stored on every score result, `input_resolution`, for the health page to read) |
+| Where carry-forward is switched on | The `carry_forward` quirk of the formula in use. Parity keeps it off. A new formula `production` v1 (migration scoring 0006) is parity with it on; run `score_day --formula production` |
+| Without carry-forward | The latest good row is used as it was delivered, whatever its date (the golden runway rows are 2 to 5 days old and must still be used); a bad latest row gives NULL with its own reason |
+| What a failed catalyst fetch is | `derive_catalyst` marks a company's signal `failed` (first reason the failed call's code, else `fetch_error`) when it has had ClinicalTrials.gov calls before but none of its aliases was fetched successfully by the run of that day. Companies that never had a call (fixtures) are not judged |
+| What a failed runway is | A row with no runway (`runway_months` null) |
+| Editable maximum ages | The settings `max_age_runway_days` (120) and `max_age_catalyst_days` (7) drive the resolver. The short-volume (5 trading days) and insider (7 days) limits are applied inside the database views and are fixed there; the settings keys exist but nothing reads them yet |
+| Stored result | `score_result.input_resolution` holds, for runway and catalyst, the state (fresh, carried, expired, missing), age in days, reason and source date; `carried_inputs` lists `runway` and `catalyst` when carried |
 
 **Test plan**
 | ID | Level | Test | Pass condition |
