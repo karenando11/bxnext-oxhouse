@@ -1526,7 +1526,7 @@ Feature: ClinicalTrials.gov collection
 
 ## Step 13A: Trial display derivations
 
-**Depends on:** Step 13 (stored study versions). **Size:** S. Pure read-time functions; nothing is stored.
+**Status: done** (code in `backend/apps/trials/display.py`, tests in `backend/tests/test_trial_display.py`; not yet attached to the API, which is the API layer's job). **Depends on:** Step 13 (stored study versions). **Size:** S. Pure read-time functions; nothing is stored.
 
 ```gherkin
 Feature: Trial panel values derived from stored studies
@@ -1574,6 +1574,10 @@ Feature: Trial panel values derived from stored studies
 |---|---|
 | Where a combined "Phase 2/3" study falls in the Phase 3 first ordering | Treated as Phase 3 (to confirm) |
 | Indications are not de-duplicated | Parity with the current page; de-duplicate later if the product owner wants it |
+| Rounding of "quarters out" | Days divided by 91.31, rounded up (182 days gives 2, 20 gives 1, 0 and below is "Past due") |
+| Date used to order and show a study | Primary completion date, else study completion date |
+| Drug shown for the chosen study | Its first intervention, as specified, even when that is "Placebo" (seen for DFTX on 2026-11-24) |
+| Long-overdue Phase 3 studies lead the card | As specified (past dates are not filtered). On 2026-11-24 SMMT led with a study due 2021 and APLM with one due 2024 |
 
 **Test plan**
 | ID | Level | Test | Data | Pass condition |

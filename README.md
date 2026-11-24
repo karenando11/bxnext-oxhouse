@@ -4,7 +4,7 @@ An internal research tool for screening and diligence on small-cap healthcare co
 Phase 1 builds the screener: a daily universe from Finviz, scores computed in-house, and a
 screen with a company page.
 
-Status: **Phase 1, Steps 0 to 13** built. Step 9 is backend only (the screener page is the React frontend's job). Step 10 (Finviz ingestion) is tested on synthetic exports only: the first real download, with `FINVIZ_AUTH_TOKEN`, is still to do. Steps 11, 11A and 11B (SEC collectors, FINRA short volume, Form 4 insider activity) are also replayed on real SEC and FINRA responses recorded on 2026-11-20 (not kept in the repository; `scripts/record_fixtures.py` records them again); a multi-owner Form 4 and an unparseable one were missing from those recordings. Step 13 (ClinicalTrials.gov) is tested on synthetic payloads and a live run. Next: Step 13A, trial display derivations, then Step 14.
+Status: **Phase 1, Steps 0 to 13A** built. Step 9 is backend only (the screener page is the React frontend's job). Step 10 (Finviz ingestion) is tested on synthetic exports only: the first real download, with `FINVIZ_AUTH_TOKEN`, is still to do. Steps 11, 11A and 11B (SEC collectors, FINRA short volume, Form 4 insider activity) are also replayed on real SEC and FINRA responses recorded on 2026-11-20 (not kept in the repository; `scripts/record_fixtures.py` records them again); a multi-owner Form 4 and an unparseable one were missing from those recordings. Step 13 (ClinicalTrials.gov) is tested on synthetic payloads and a live run. Step 13A (trial display values, `apps/trials/display.py`) is pure read-time code, not yet wired into the API. Next: Step 14, catalyst signal.
 
 ## Repository layout
 
