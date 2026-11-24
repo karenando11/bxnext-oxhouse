@@ -1,7 +1,9 @@
 """Raw file storage: keeps every download unchanged, named by its content hash.
 
-Phase 1 stores on local disk. An object store (R2 or B2) replaces ``LocalRawStorage`` behind the
-same two methods; ``SourceCall.storage_uri`` records where a file went.
+Development stores on local disk (``LocalRawStorage``). Production keeps no raw files
+(``NullRawStorage``): only the parsed rows and each download's hash and size are stored. The
+backend is chosen by the ``RAW_STORAGE_BACKEND`` setting (see ``get_raw_storage``).
+``SourceCall.storage_uri`` records where a file went, and is empty when nothing was kept.
 """
 
 from __future__ import annotations
@@ -9,6 +11,8 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 from typing import Protocol
+
+from django.conf import settings
 
 
 class RawStorage(Protocol):
@@ -37,3 +41,20 @@ class LocalRawStorage:
 
     def get(self, uri: str) -> bytes:
         return Path(uri.removeprefix("file://")).read_bytes()
+
+
+class NullRawStorage:
+    """Keeps nothing. ``put`` returns an empty URI, so the source call records no location."""
+
+    def put(self, key: str, content: bytes) -> str:
+        return ""
+
+    def get(self, uri: str) -> bytes:
+        raise FileNotFoundError("Raw files are not kept in this environment.")
+
+
+def get_raw_storage() -> RawStorage:
+    """The storage the settings ask for: local disk in development, nothing in production."""
+    if settings.RAW_STORAGE_BACKEND == "local":
+        return LocalRawStorage(settings.RAW_STORAGE_DIR)
+    return NullRawStorage()

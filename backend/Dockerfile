@@ -19,7 +19,8 @@ WORKDIR /app
 # lives outside /app so that mounting the source over /app does not hide it.
 COPY pyproject.toml uv.lock ./
 
-# Raw downloads (see RAW_STORAGE_DIR) go here; a named volume keeps them between runs.
+# Development raw downloads (see RAW_STORAGE_DIR) go here; a named volume keeps them between
+# runs. The production setting keeps no raw files.
 RUN useradd --create-home --uid 1000 app \
     && mkdir -p /data/raw \
     && chown -R app /data

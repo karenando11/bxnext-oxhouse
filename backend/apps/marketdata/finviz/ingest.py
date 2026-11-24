@@ -18,7 +18,6 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from typing import Any
 
-from django.conf import settings
 from django.db import transaction
 
 from apps.companies.models import Company, TickerHistory
@@ -39,7 +38,7 @@ from apps.marketdata.finviz.client import (
 from apps.marketdata.finviz.columns import FIELDS, NUMERIC_FIELDS
 from apps.marketdata.finviz.parser import ExportFormatError, ParsedExport, parse_export
 from apps.marketdata.models import FinvizSnapshot
-from apps.marketdata.storage import LocalRawStorage, RawStorage, sha256_hex
+from apps.marketdata.storage import RawStorage, get_raw_storage, sha256_hex
 from apps.platform.bulk import BATCH_SIZE, upsert
 from apps.platform.models import DataQualityCheck, PipelineRun, SourceCall
 from apps.platform.settings_store import get_setting
@@ -85,10 +84,6 @@ def build_request() -> FinvizRequest:
         attempts=int(get_setting("finviz.attempts", DEFAULT_ATTEMPTS)),
         timeout=float(get_setting("finviz.timeout_seconds", DEFAULT_TIMEOUT_SECONDS)),
     )
-
-
-def raw_storage() -> RawStorage:
-    return LocalRawStorage(settings.RAW_STORAGE_DIR)
 
 
 def scope_key(day: date, request: FinvizRequest, source: str = "") -> str:
@@ -182,7 +177,7 @@ def ingest_finviz(
     the contract sample. Raises ``FinvizIngestFailed`` when the stage has to stop.
     """
     request = build_request()
-    storage = storage or raw_storage()
+    storage = storage or get_raw_storage()
     key = scope_key(as_of_date, request, source_name)
     started_at = datetime.now(UTC)
     run = PipelineRun.objects.create(

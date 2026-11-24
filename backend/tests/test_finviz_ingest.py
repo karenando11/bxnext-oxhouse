@@ -469,6 +469,7 @@ def test_repeated_52_week_headers_are_stored_by_position(storage: LocalRawStorag
 def test_the_ingest_command_loads_a_saved_file(
     tmp_path: Path, settings: Any, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    settings.RAW_STORAGE_BACKEND = "local"
     settings.RAW_STORAGE_DIR = tmp_path / "raw"
     path = tmp_path / "export.csv"
     path.write_bytes(export_csv(universe(4, eps_this="")))
@@ -486,6 +487,7 @@ def test_the_ingest_command_reports_problems(
     tmp_path: Path, settings: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("FINVIZ_AUTH_TOKEN", raising=False)  # whatever the environment holds
+    settings.RAW_STORAGE_BACKEND = "local"
     settings.RAW_STORAGE_DIR = tmp_path / "raw"
     with pytest.raises(CommandError, match="Not a date"):
         call_command("ingest_finviz", "--date", "soon")

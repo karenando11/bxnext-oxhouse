@@ -78,8 +78,22 @@ ASGI_APPLICATION = "config.asgi.application"
 
 DATABASES = {"default": _config.database}
 
-# Where raw downloads are kept unchanged (local disk now; an object store later).
+# Raw downloads: kept unchanged on local disk in development, never kept in production (only the
+# parsed rows and each download's hash). RAW_STORAGE_BACKEND is "local" or "none"; the default
+# follows DEBUG. Local disk is refused in production.
 RAW_STORAGE_DIR = Path(os.environ.get("RAW_STORAGE_DIR") or BASE_DIR / "var" / "raw")
+RAW_STORAGE_BACKEND = os.environ.get("RAW_STORAGE_BACKEND", "").strip().lower() or (
+    "local" if DEBUG else "none"
+)
+if RAW_STORAGE_BACKEND not in ("local", "none"):
+    raise ImproperlyConfigured(
+        f"RAW_STORAGE_BACKEND must be 'local' or 'none', not {RAW_STORAGE_BACKEND!r}."
+    )
+if RAW_STORAGE_BACKEND == "local" and not DEBUG:
+    raise ImproperlyConfigured(
+        "Raw files must not be kept on local disk in production. Unset RAW_STORAGE_BACKEND "
+        "(production keeps no raw files) or set it to 'none'."
+    )
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 AUTH_PASSWORD_VALIDATORS = [
