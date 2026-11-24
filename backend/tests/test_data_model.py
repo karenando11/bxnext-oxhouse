@@ -22,6 +22,7 @@ PHASE_1_TABLES = {
     "platform_dataqualitycheck",
     "platform_setting",
     "platform_alertstate",
+    "platform_paralleldiff",
     "companies_company",
     "companies_tickerhistory",
     "companies_companysponsoralias",
@@ -65,10 +66,10 @@ def _relations(kind: str) -> set[str]:
 
 
 @pytest.mark.django_db
-def test_the_24_phase_1_tables_exist() -> None:
+def test_the_25_phase_1_tables_exist() -> None:
     tables = _relations("BASE TABLE")
     assert PHASE_1_TABLES <= tables
-    assert len(PHASE_1_TABLES) == 24
+    assert len(PHASE_1_TABLES) == 25
 
 
 @pytest.mark.django_db

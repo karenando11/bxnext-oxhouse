@@ -143,3 +143,11 @@ class AlertState(models.Model):
 
     class Meta:
         indexes = [models.Index(fields=["active", "-raised_at"], name="alertstate_active")]
+
+
+class ParallelDiff(models.Model):
+    """The daily comparison against the current system's export (Step 20), one row per day."""
+
+    day = models.DateField(unique=True, help_text="Market date both systems describe.")
+    report = models.JSONField()
+    created_at = models.DateTimeField(auto_now=True)

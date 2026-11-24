@@ -1,6 +1,6 @@
 # OxHouse Research: Phase 1 Requirements and Test Plans
 
-Status: living document. Steps 0 to 18 are built, and Step 19's deployment files are written but have not run on a server (each step carries its own status line). Step 20 is not built yet.
+Status: living document. Steps 0 to 18 are built, and Step 19's deployment files are written but have not run on a server (each step carries its own status line). Step 20's comparison tooling is built, but the 14-day run has not started.
 
 This document turns the 24 Phase 1 steps (0 to 20, plus 11A, 11B and 13A) into Gherkin requirements with acceptance criteria, open items and test plans. It builds on the Phase 1 architecture and data model v6. Since v4, every company-page field is collected for every company in the universe each day, which is why FINRA short volume (11A) and Form 4 insider activity (11B) are Phase 1 steps. v5 consolidates storage to 23 tables (24 with `alert_state`, added in Step 17) (two metric tables become views, four explanatory tables become JSONB on their parent rows, reason codes become a list in code) and adds a rule that the API reads only one read model, the `company_page` view. The pipeline is one daily batch that starts at 06:00 US Eastern, Monday to Friday, and is meant to finish by 07:00 (Step 16). It replaces the earlier two-stage design (a 16:30 market stage and a 23:30 filings stage), and the batch checks the read model as its last step.
 
@@ -2131,7 +2131,7 @@ Feature: Production operations
 
 ## Step 20: Parallel run and acceptance
 
-**Depends on:** all previous steps. **Size:** M.
+**Status: the tooling is built and tried on the golden day; the 14-day run itself has not started** (it needs the daily exports of the current system and a running batch). Code: `backend/apps/platform/parallel.py`, commands `compare_day` and `parallel_status`; table `parallel_diff`; tests in `backend/tests/test_parallel.py` and `test_parallel_golden.py`. **Depends on:** all previous steps. **Size:** M.
 
 ```gherkin
 Feature: Acceptance against the current system
@@ -2170,6 +2170,14 @@ Feature: Acceptance against the current system
 |---|---|
 | How daily current-system outputs are obtained (the analyst has no direct access) | A daily export from the person with access |
 | Tolerance | 0.05 on scores |
+| How a day is compared | `compare_day --export FILE --date D` reads the current system's CSV (the golden export's format) and the `company_page` rows of date D (the view serves the latest score run, so it is run on the day it was scored). It stores one report per day in `parallel_diff`. `parallel_status` applies the pass rule over the 14 trading days ending at the latest report; `--checklist` prints the sign-off checklist |
+| What is compared | 5 scores (composite unrounded, the others as displayed, recency exactly) and 31 page fields that the export carries: price, market cap, 52-week and 200-day distances, RSI, volumes, performance, cash per share, ratios, short float, institutional ownership, industry, earnings date, peer group and count, runway (months, quarters, rating), trial counts, latest trial and status, catalyst date and overdue flag. Short volume, insider activity, margins and the trial lists are not in the export and are checked by hand |
+| Tolerances | Scores 0.05. Counts and text exactly. Ratios within half a unit of the displayed last digit (price 0.005, market cap 0.5 million, RSI 0.05, relative volume 0.0005, runway months 0.05) |
+| Classification rules | `carried_forward_input` when our runway or catalyst input was carried or expired and the field or score depends on it. `known_quirk_fix` when listed in the setting `parallel.known_quirk_fixes` (`"TICKER:field"` or `"*:field"`). `source_data_timing` for catalyst, trial and earnings fields, a milestone gap of at most 0.5 (setting `parallel.timing_milestone_max_delta`), and runway fields where the two systems used runway rows of different dates. Everything else is `unexplained`. The 0.5 limit is a guess from the golden day; check it against the first real days |
+| Within tolerance | A company is within tolerance when its composite and each component are within 0.05 (explained or not); the share is taken over the companies in the export. A company missing on one side is out of tolerance and listed |
+| Pass rule as built | 14 trading days each with a report; at least 12 of them with 99 percent of companies within tolerance; no (company, field) unexplained on more than 2 of the days; every difference classified |
+| Golden day against its own export | 1,053 of 1,053 companies on both sides. 621 within tolerance on scores. Counts, ratios, runway and peer groups all agree. The differences left are milestone (432: the export has `eps_this` blank, as the old system had it when it scored; 34 of them above the 0.5 limit, so unexplained), latest trial and its status (441, the golden loader does not carry them), earnings date (93) and one overdue flag. A real day, with real `eps_this`, should not show the milestone gap |
+| Found while building: runway quarters and rating | The export's `runway_quarters` is the integer floor of months divided by 3 (995 of 995 rows) and its rating is a number 1 to 5 (below 6, 6 to 12, 12 to 18, 18 to 24, 24 and over). Step 12 specifies quarters to one decimal and four names. The report compares in the old terms (floor of our months divided by 3; 3 and 4 both read as Moderate), so they agree. **Decision for the product owner: should the page show the old integer quarters and five levels, or the new one-decimal quarters and four names?** |
 | What counts as an explained difference | The four classes above |
 | The old system snapshots at 16:30 and the new batch at 06:00 | Prices and market data should match, because 16:30 is after the close and 06:00 the next morning still shows that close. Expected differences are the time-based terms (days to earnings and catalysts shift by about 13.5 hours and can cross a band) and sources updated overnight. These fall under the "source data timing" class |
 
